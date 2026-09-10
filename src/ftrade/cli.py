@@ -207,9 +207,11 @@ def cmd_serve(args, cfg) -> int:
 
     from .web.app import create_app
 
+    host = args.host or cfg.web.host
+    port = args.port or cfg.web.port
     app = create_app(cfg)
-    console.print(f"[green]面板启动：http://{cfg.web.host}:{cfg.web.port}")
-    uvicorn.run(app, host=cfg.web.host, port=cfg.web.port, log_level="warning")
+    console.print(f"[green]面板启动：http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
     return 0
 
 
@@ -248,7 +250,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", help="同时导出 JSON")
     s.set_defaults(func=cmd_report)
 
-    sub.add_parser("serve", help="启动本地 Web 面板").set_defaults(func=cmd_serve)
+    s_serve = sub.add_parser("serve", help="启动本地 Web 面板")
+    s_serve.add_argument("--host", help="覆盖配置里的监听地址")
+    s_serve.add_argument("--port", type=int, help="覆盖配置里的端口")
+    s_serve.set_defaults(func=cmd_serve)
     return p
 
 
