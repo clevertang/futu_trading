@@ -12,6 +12,22 @@ class FX:
     def has(self, currency: str | None) -> bool:
         return bool(currency) and currency in self.rates
 
+    def rebase(self, base: str) -> FX:
+        """Return an FX table expressed in a different base currency.
+
+        Configured rates are relative to the configured base, so converting
+        currency ``c`` into currency ``X`` is ``rates[c] / rates[X]``.
+        """
+        if not base or base == self.base:
+            return self
+        divisor = self.rates.get(base)
+        if not divisor:
+            return self
+        return FX({c: r / divisor for c, r in self.rates.items()}, base)
+
+    def currencies(self) -> list[str]:
+        return sorted(self.rates)
+
     def to_base(self, amount: float | None, currency: str | None) -> float | None:
         if amount is None:
             return None

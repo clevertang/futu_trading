@@ -11,9 +11,9 @@ from .fx import FX, currency_for_code
 from .pnl import fifo_round_trips, open_lots
 
 
-def build_report(db: Database, cfg, acc_id: int | None = None) -> dict:
+def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None = None) -> dict:
     a = cfg.analysis
-    fx = FX(a.fx_rates, a.base_currency)
+    fx = FX(a.fx_rates, a.base_currency).rebase(base) if base else FX(a.fx_rates, a.base_currency)
 
     pos = repo.positions(db, acc_id=acc_id)
     dls = repo.deals(db, acc_id=acc_id)
@@ -57,7 +57,8 @@ def build_report(db: Database, cfg, acc_id: int | None = None) -> dict:
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "snapshot_date": repo.latest_snapshot_date(db, acc_id),
         "last_sync_at": db.get_state("last_sync_at"),
-        "base_currency": a.base_currency,
+        "base_currency": fx.base,
+        "available_currencies": fx.currencies(),
         "accounts": repo.accounts(db).to_dict("records"),
         "portfolio": portfolio.summary(pos, fx, a.concentration_warn),
         "risk": metrics.risk_metrics(curve, a.risk_free_rate),
@@ -65,6 +66,8 @@ def build_report(db: Database, cfg, acc_id: int | None = None) -> dict:
         if not curve.empty
         else [],
         "behavior": trades.behavior(trips, dls, fx),
+        "realized_curve": trades.realized_curve(trips, fx),
+        "pnl_distribution": trades.pnl_distribution(trips),
         "round_trips": trips.sort_values("close_time", ascending=False).head(50).to_dict("records")
         if not trips.empty
         else [],

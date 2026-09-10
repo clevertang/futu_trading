@@ -1,142 +1,500 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ftrade · 组合面板</title>
+<title>ftrade</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="/static/i18n.js"></script>
 <style>
 :root{
-  --bg:#fbfbfa; --panel:#fff; --line:#e6e4df; --text:#1f1e1c; --muted:#6f6c66;
-  --accent:#3a6ea5; --pos:#1f7a5a; --neg:#b3453b; --warn:#8a6d1f; --warn-bg:#fdf6e3;
+  --bg:#fbfbfa; --panel:#fff; --sunk:#f5f4f1; --line:#e6e4df; --line-soft:#efedE8;
+  --text:#1f1e1c; --muted:#6f6c66; --faint:#a8a49c;
+  --accent:#3a6ea5; --accent-soft:#e8eff7;
+  --up:#1f7a5a; --down:#b3453b; --warn:#8a6d1f; --warn-bg:#fdf6e3;
+  --shadow:0 1px 2px rgba(31,30,28,.04), 0 1px 8px rgba(31,30,28,.03);
 }
 @media (prefers-color-scheme:dark){
-  :root{--bg:#1a1a19;--panel:#232322;--line:#35342f;--text:#eceae4;--muted:#9b978e;
-        --accent:#7fa8d4;--pos:#5fb894;--neg:#e08279;--warn:#d9bd6a;--warn-bg:#2c2718;}
+  :root{--bg:#141414; --panel:#1e1e1d; --sunk:#191918; --line:#33322d; --line-soft:#2a2926;
+        --text:#eceae4; --muted:#9b978e; --faint:#6d6a63;
+        --accent:#7fa8d4; --accent-soft:#22303d;
+        --up:#4ec09a; --down:#e07b71; --warn:#d9bd6a; --warn-bg:#2c2718;
+        --shadow:0 1px 2px rgba(0,0,0,.35), 0 1px 8px rgba(0,0,0,.25);}
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);
-  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans",sans-serif;}
-.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
-header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:20px}
-h1{font-size:20px;margin:0;letter-spacing:.01em}
-.meta{color:var(--muted);font-size:12px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-.card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
-.card .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
-.grid{display:grid;grid-template-columns:1fr;gap:16px}
-@media(min-width:900px){.grid.two{grid-template-columns:1.4fr 1fr}}
-section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
-section h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px}
-.tw{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
-th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
-th{color:var(--muted);font-weight:500;font-size:12px}
+  font:13.5px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans",
+       "Noto Sans JP",sans-serif;-webkit-font-smoothing:antialiased;}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+
+/* ---- top bar ---- */
+.topbar{position:sticky;top:0;z-index:20;background:var(--bg);
+  border-bottom:1px solid var(--line);backdrop-filter:saturate(180%) blur(8px)}
+.topbar-in{max-width:1280px;margin:0 auto;padding:11px 20px 0;
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.brand{font-size:15px;font-weight:650;letter-spacing:-.01em;margin-right:2px}
+.brand em{font-style:normal;color:var(--faint);font-weight:400;font-size:12.5px;margin-left:6px}
+.spacer{flex:1}
+.seg{display:inline-flex;background:var(--sunk);border:1px solid var(--line);
+  border-radius:7px;padding:2px;gap:1px}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;
+  padding:3px 9px;border-radius:5px;cursor:pointer;white-space:nowrap}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--text);font-weight:550;
+  box-shadow:var(--shadow)}
+.tabs{display:flex;gap:2px;max-width:1280px;margin:0 auto;padding:9px 20px 0;overflow-x:auto}
+.tabs button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;
+  padding:7px 13px 9px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button:hover{color:var(--text)}
+.tabs button[aria-selected="true"]{color:var(--text);font-weight:600;border-bottom-color:var(--accent)}
+
+.wrap{max-width:1280px;margin:0 auto;padding:20px 20px 72px}
+.meta{color:var(--muted);font-size:11.5px;line-height:1.75;text-align:right}
+.meta b{color:var(--text);font-weight:500}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(156px,1fr));gap:11px;margin-bottom:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:12px 14px;box-shadow:var(--shadow)}
+.card .k{color:var(--muted);font-size:11px;margin-bottom:5px;letter-spacing:.02em}
+.card .v{font-size:18.5px;font-weight:650;letter-spacing:-.015em}
+.card .sub{color:var(--faint);font-size:11px;margin-top:3px}
+
+.grid{display:grid;gap:14px;margin-bottom:14px}
+@media(min-width:980px){
+  .grid.two{grid-template-columns:1.55fr 1fr}
+  .grid.half{grid-template-columns:1fr 1fr}
+  .grid.thirds{grid-template-columns:1fr 1fr 1fr}
+}
+section{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:15px 16px;box-shadow:var(--shadow);min-width:0}
+section h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+  margin:0 0 3px;font-weight:650}
+section .hint{font-size:11.5px;color:var(--faint);margin:0 0 12px;line-height:1.55}
+.chart{height:250px;position:relative}
+.chart.tall{height:292px}
+.chart.short{height:186px}
+.empty{min-height:120px;display:flex;align-items:center;justify-content:center;text-align:center;
+  color:var(--faint);font-size:12px;padding:16px 20px;line-height:1.8}
+.empty code{background:var(--sunk);padding:1px 5px;border-radius:4px;font-size:11.5px}
+
+.tw{overflow-x:auto;margin:0 -16px -15px;padding:0 16px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:6.5px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line-soft)}
+th:first-child,td:first-child,th.l,td.l{text-align:left}
+th{color:var(--muted);font-weight:500;font-size:11px;position:sticky;top:0;background:var(--panel);
+  letter-spacing:.02em}
 tbody tr:last-child td{border-bottom:none}
-td{font-variant-numeric:tabular-nums}
-.pos{color:var(--pos)} .neg{color:var(--neg)}
-.obs{list-style:none;padding:0;margin:0}
-.obs li{padding:9px 12px;border-radius:8px;margin-bottom:8px;border:1px solid var(--line)}
+tbody tr:hover td{background:var(--sunk)}
+td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--muted)}
+.up{color:var(--up)} .down{color:var(--down)}
+
+.obs{list-style:none;padding:0;margin:0;display:grid;gap:7px}
+.obs li{padding:9px 12px;border-radius:7px;border:1px solid var(--line);font-size:12.5px;line-height:1.6}
 .obs li.warn{background:var(--warn-bg);border-color:transparent;color:var(--warn)}
-.obs b{font-weight:600}
-.chart{height:240px;position:relative}
-.foot{color:var(--muted);font-size:12px;margin-top:20px}
-.err{color:var(--neg)}
+.obs b{font-weight:650;margin-right:3px}
+
+.bars{display:grid;gap:8px}
+.bar-row{display:grid;grid-template-columns:104px 1fr 76px;align-items:center;gap:10px;font-size:12px}
+.bar-row .nm{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-track{height:7px;border-radius:4px;background:var(--sunk);position:relative;overflow:hidden}
+.bar-fill{position:absolute;top:0;bottom:0;border-radius:4px}
+.bar-row .amt{text-align:right}
+
+.dispo{display:grid;gap:13px}
+.dispo-row{display:grid;grid-template-columns:58px 1fr 62px;align-items:center;gap:10px;font-size:12.5px}
+.dispo-row .lb{color:var(--muted)}
+.dispo-row .amt{text-align:right;font-weight:650}
+.dispo-note{font-size:12px;color:var(--muted);line-height:1.7;padding-top:11px;
+  border-top:1px solid var(--line-soft)}
+
+.pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:10.5px;
+  background:var(--accent-soft);color:var(--accent);margin-left:6px;vertical-align:1px}
+.pill.off{background:var(--sunk);color:var(--faint)}
+.foot{color:var(--faint);font-size:11px;margin-top:22px;line-height:1.8}
+.err{color:var(--down);padding:14px 0}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>ftrade · 组合面板</h1>
-    <div class="meta" id="meta">加载中…</div>
-  </header>
-  <div id="err" class="err"></div>
-  <div class="cards" id="cards"></div>
-  <div class="grid two" style="margin-bottom:16px">
-    <section><h2>净值曲线</h2><div class="chart"><canvas id="equity"></canvas></div></section>
-    <section><h2>持仓权重</h2><div class="chart"><canvas id="weights"></canvas></div></section>
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand">ftrade<em id="subtitle"></em></div>
+    <div class="spacer"></div>
+    <div class="seg" id="cur-seg"></div>
+    <div class="seg" id="lang-seg"></div>
+    <div class="meta num" id="meta"></div>
   </div>
-  <section style="margin-bottom:16px"><h2>观察</h2><ul class="obs" id="obs"></ul></section>
-  <section style="margin-bottom:16px"><h2>当前持仓</h2><div class="tw"><table id="pos"></table></div></section>
-  <section><h2>已平仓交易（FIFO）</h2><div class="tw"><table id="trips"></table></div></section>
-  <p class="foot">数据来自本地 SQLite，只读展示。以上为历史统计，不构成投资建议。</p>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
 </div>
-<script>
-const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const fmt = (v,d=2) => v==null||isNaN(v) ? '-' : Number(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
-const pct = v => v==null||isNaN(v) ? '-' : (Number(v)*100).toFixed(2)+'%';
-const sign = v => v==null ? '' : (v>0?'pos':v<0?'neg':'');
 
-function table(el, cols, rows){
-  el.innerHTML = '<thead><tr>'+cols.map(c=>`<th>${c.t}</th>`).join('')+'</tr></thead><tbody>'+
-    (rows.length?rows.map(r=>'<tr>'+cols.map(c=>{
-      const v=c.f(r); return `<td class="${c.c?c.c(r):''}">${v}</td>`;}).join('')+'</tr>').join('')
-     : `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--muted)">暂无数据</td></tr>`)+
-    '</tbody>';
+<div class="wrap">
+  <div id="err" class="err"></div>
+
+  <!-- ============ Overview ============ -->
+  <div id="tab-overview" role="tabpanel">
+    <div class="cards num" id="cards"></div>
+    <div class="grid two">
+      <section>
+        <h2 data-t="realizedCurve"></h2><p class="hint" data-t="realizedCurveHint"></p>
+        <div class="chart tall"><canvas id="c-realized"></canvas></div>
+      </section>
+      <section>
+        <h2 data-t="equity"></h2><p class="hint" data-t="equityHint"></p>
+        <div class="chart tall" id="equity-box"><canvas id="c-equity"></canvas></div>
+        <div class="empty" id="equity-empty" hidden></div>
+      </section>
+    </div>
+    <section>
+      <h2 data-t="observations"></h2><p class="hint" data-t="observationsHint"></p>
+      <ul class="obs" id="obs"></ul>
+    </section>
+  </div>
+
+  <!-- ============ Trading ============ -->
+  <div id="tab-trading" role="tabpanel" hidden>
+    <div class="grid thirds">
+      <section>
+        <h2 data-t="distribution"></h2><p class="hint" data-t="distributionHint"></p>
+        <div class="chart short"><canvas id="c-dist"></canvas></div>
+      </section>
+      <section>
+        <h2 data-t="disposition"></h2><p class="hint" data-t="dispositionHint"></p>
+        <div class="dispo num" id="dispo"></div>
+      </section>
+      <section>
+        <h2 data-t="turnover"></h2><p class="hint" data-t="turnoverHint"></p>
+        <div class="chart short"><canvas id="c-turnover"></canvas></div>
+      </section>
+    </div>
+    <section style="margin-bottom:14px">
+      <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint"></p>
+      <div class="bars num" id="bycode"></div>
+    </section>
+    <section>
+      <h2 data-t="trips"></h2><p class="hint" data-t="tripsHint"></p>
+      <div class="tw"><table class="num" id="t-trips"></table></div>
+    </section>
+  </div>
+
+  <!-- ============ Positions ============ -->
+  <div id="tab-positions" role="tabpanel" hidden>
+    <div class="grid half">
+      <section>
+        <h2 data-t="weights"></h2><p class="hint" data-t="weightsHint"></p>
+        <div class="chart"><canvas id="c-weights"></canvas></div>
+      </section>
+      <section>
+        <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint"></p>
+        <div class="bars num" id="bycode2"></div>
+      </section>
+    </div>
+    <section>
+      <h2 data-t="positions"></h2><p class="hint" data-t="positionsHint"></p>
+      <div class="tw"><table class="num" id="t-pos"></table></div>
+    </section>
+  </div>
+
+  <!-- ============ Accounts & data ============ -->
+  <div id="tab-data" role="tabpanel" hidden>
+    <section style="margin-bottom:14px">
+      <h2 data-t="accounts"></h2><p class="hint" data-t="accountsHint"></p>
+      <div class="tw"><table class="num" id="t-accs"></table></div>
+    </section>
+    <section id="recon-wrap" hidden>
+      <h2 data-t="recon"></h2><p class="hint" data-t="reconHint"></p>
+      <div class="tw"><table class="num" id="t-recon"></table></div>
+    </section>
+  </div>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+const CURRENCIES = ["USD", "JPY", "CNH", "HKD"];
+const TABS = ["overview", "trading", "positions", "data"];
+const store = {
+  get: (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+
+let lang = store.get("ftrade.lang", "en");
+let base = store.get("ftrade.base", "USD");
+let tab = store.get("ftrade.tab", "overview");
+let rep = null;
+const charts = {};
+const drawn = new Set();
+
+const T = k => (window.I18N[lang] || {})[k] ?? window.I18N.en[k] ?? k;
+const fill = (k, vars) => Object.entries(vars).reduce((s, [n, v]) => s.replaceAll(`{${n}}`, v), T(k));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = (v, d = 2) => v == null || isNaN(v) ? "-"
+  : Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const compact = v => v == null || isNaN(v) ? "-"
+  : Number(v).toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const pct = (v, d = 2) => v == null || isNaN(v) ? "-" : (Number(v) * 100).toFixed(d) + "%";
+const dir = v => v == null ? "" : (v > 0 ? "up" : v < 0 ? "down" : "");
+
+function table(el, cols, rows) {
+  el.innerHTML = "<thead><tr>" + cols.map(c => `<th class="${c.l ? "l" : ""}">${T(c.t)}</th>`).join("") +
+    "</tr></thead><tbody>" + (rows.length
+      ? rows.map(r => "<tr>" + cols.map(c =>
+          `<td class="${[c.c ? c.c(r) : "", c.cls || "", c.l ? "l" : ""].filter(Boolean).join(" ")}">${c.f(r)}</td>`
+        ).join("") + "</tr>").join("")
+      : `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--faint);padding:22px">${T("noData")}</td></tr>`) +
+    "</tbody>";
 }
 
-fetch('/api/report').then(r=>r.json()).then(rep=>{
-  if(rep.detail){ document.getElementById('err').textContent = rep.detail; return; }
-  const pf = rep.portfolio||{}, risk = rep.risk||{}, bh = rep.behavior||{};
-  document.getElementById('meta').textContent =
-    `快照 ${rep.snapshot_date||'-'}｜同步于 ${rep.last_sync_at||'-'}｜本位币 ${rep.base_currency}`;
+/* ---------- chrome ---------- */
+function renderChrome() {
+  document.documentElement.lang = lang;
+  document.getElementById("subtitle").textContent = "· " + T("subtitle");
+  document.getElementById("foot").textContent = T("footer");
+  document.querySelectorAll("[data-t]").forEach(el => { el.textContent = T(el.dataset.t); });
 
-  const cards = [
-    ['总市值', fmt(pf.market_value)],
-    ['浮动盈亏', fmt(pf.unrealized_pl), sign(pf.unrealized_pl)],
-    ['已实现盈亏', fmt(bh.realized_pnl), sign(bh.realized_pnl)],
-    ['持仓数 / 有效持仓', `${pf.holdings??0} / ${pf.effective_positions??'-'}`],
-    ['最大回撤', risk.max_drawdown!=null?pct(risk.max_drawdown):'-'],
-    ['胜率', bh.win_rate!=null?pct(bh.win_rate):'-'],
-  ];
-  document.getElementById('cards').innerHTML = cards.map(([k,v,c])=>
-    `<div class="card"><div class="k">${k}</div><div class="v ${c||''}">${v}</div></div>`).join('');
+  document.getElementById("lang-seg").innerHTML = Object.keys(window.I18N).map(l =>
+    `<button data-lang="${l}" aria-pressed="${l === lang}">${window.I18N[l]._name}</button>`).join("");
+  const avail = (rep && rep.available_currencies) || CURRENCIES;
+  document.getElementById("cur-seg").innerHTML = CURRENCIES.filter(c => avail.includes(c)).map(c =>
+    `<button data-cur="${c}" aria-pressed="${c === base}">${c}</button>`).join("");
+  document.getElementById("tabs").innerHTML = TABS.map(t =>
+    `<button role="tab" data-tab="${t}" aria-selected="${t === tab}">${T("tab" + t[0].toUpperCase() + t.slice(1))}</button>`).join("");
+}
 
-  document.getElementById('obs').innerHTML = (rep.observations||[]).map(o=>
-    `<li class="${o.level}"><b>[${o.topic}]</b> ${o.message}</li>`).join('');
+function showTab(name) {
+  tab = name; store.set("ftrade.tab", name);
+  TABS.forEach(t => { document.getElementById("tab-" + t).hidden = t !== name; });
+  document.querySelectorAll("#tabs button").forEach(b =>
+    b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  // Chart.js sizes to the container, so a chart built while hidden comes out
+  // 0px wide. Draw each panel's charts the first time it becomes visible.
+  drawCharts(name);
+}
 
-  table(document.getElementById('pos'),[
-    {t:'代码',f:r=>r.code},{t:'名称',f:r=>r.name||''},
-    {t:'数量',f:r=>fmt(r.qty,0)},{t:'成本',f:r=>fmt(r.cost_price,3)},
-    {t:'现价',f:r=>fmt(r.last_price,3)},{t:'市值',f:r=>fmt(r.market_val)},
-    {t:'权重',f:r=>pct(r.weight)},
-    {t:'浮盈',f:r=>fmt(r.pl_val),c:r=>sign(r.pl_val)},
-    {t:'浮盈%',f:r=>r.pl_ratio!=null?r.pl_ratio.toFixed(2)+'%':'-',c:r=>sign(r.pl_ratio)},
-  ], pf.holdings_detail||[]);
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.lang && b.dataset.lang !== lang) {
+    lang = b.dataset.lang; store.set("ftrade.lang", lang);
+    renderChrome(); if (rep) { renderAll(); }
+  } else if (b.dataset.cur && b.dataset.cur !== base) {
+    base = b.dataset.cur; store.set("ftrade.base", base); load();
+  } else if (b.dataset.tab) {
+    showTab(b.dataset.tab);
+  }
+});
 
-  table(document.getElementById('trips'),[
-    {t:'代码',f:r=>r.code},{t:'名称',f:r=>r.stock_name||''},
-    {t:'开仓',f:r=>r.open_time},{t:'平仓',f:r=>r.close_time},
-    {t:'数量',f:r=>fmt(r.qty,0)},
-    {t:'盈亏',f:r=>fmt(r.pnl),c:r=>sign(r.pnl)},
-    {t:'盈亏%',f:r=>r.pnl_pct!=null?r.pnl_pct.toFixed(2)+'%':'-',c:r=>sign(r.pnl_pct)},
-    {t:'持有天',f:r=>r.holding_days},
-  ], rep.round_trips||[]);
+/* ---------- data ---------- */
+function load() {
+  document.getElementById("meta").textContent = T("loading");
+  fetch(`/api/report?base=${encodeURIComponent(base)}`)
+    .then(r => r.json())
+    .then(r => {
+      if (r.detail) { document.getElementById("err").textContent = r.detail; return; }
+      rep = r;
+      Object.values(charts).forEach(c => c.destroy());
+      Object.keys(charts).forEach(k => delete charts[k]);
+      drawn.clear();
+      renderChrome(); renderAll();
+    })
+    .catch(e => { document.getElementById("err").textContent = T("loadFailed") + e; });
+}
 
-  const grid = css('--line'), muted = css('--muted');
-  const base = {responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{intersect:false,mode:'index'}},
-    scales:{x:{grid:{display:false},ticks:{color:muted,maxTicksLimit:6}},
-            y:{grid:{color:grid},border:{display:false},ticks:{color:muted}}}};
+function renderAll() {
+  const pf = rep.portfolio || {}, bh = rep.behavior || {}, cur = rep.base_currency || "";
 
-  const eq = rep.equity_curve||[];
-  new Chart(document.getElementById('equity'),{type:'line',
-    data:{labels:eq.map(d=>d.snap_date),
-      datasets:[{data:eq.map(d=>d.total_assets),borderColor:css('--accent'),borderWidth:2,
-        pointRadius:0,tension:.2,fill:false}]},options:base});
+  document.getElementById("meta").innerHTML =
+    `${T("snapshot")} <b>${rep.snapshot_date || "-"}</b>　${T("syncedAt")} <b>${rep.last_sync_at || "-"}</b><br>` +
+    `${T("dealRange")} <b>${bh.first_deal || "-"}</b> → <b>${bh.last_deal || "-"}</b>`;
 
-  const hold = (pf.holdings_detail||[]).slice(0,12);
-  new Chart(document.getElementById('weights'),{type:'bar',
-    data:{labels:hold.map(h=>h.name||h.code),
-      datasets:[{data:hold.map(h=>h.weight!=null?h.weight*100:0),
-        backgroundColor:css('--accent'),borderRadius:3,barThickness:14}]},
-    options:{...base,indexAxis:'y',
-      scales:{x:{grid:{color:grid},border:{display:false},
-                 ticks:{color:muted,callback:v=>v+'%'}},
-              y:{grid:{display:false},ticks:{color:muted}}}}});
-}).catch(e=>{document.getElementById('err').textContent='加载失败：'+e;});
+  document.getElementById("cards").innerHTML = [
+    [T("marketValue"), fmt(pf.market_value), "", fill("holdingsSub", { n: pf.holdings ?? 0, e: pf.effective_positions ?? "-" })],
+    [T("unrealized"), fmt(pf.unrealized_pl), dir(pf.unrealized_pl), cur],
+    [T("realized"), fmt(bh.realized_pnl), dir(bh.realized_pnl), fill("roundTripsSub", { n: bh.round_trips ?? 0 })],
+    [T("winRate"), bh.win_rate != null ? pct(bh.win_rate, 1) : "-", "", fill("profitFactorSub", { v: bh.profit_factor ?? "-" })],
+    [T("avgWinLoss"), `${compact(bh.avg_win)} / ${compact(bh.avg_loss)}`, "", fill("perTradeSub", { cur })],
+    [T("monthlyDeals"), bh.deals_per_month ?? "-", "", fill("dealsSub", { n: bh.deal_count ?? 0, d: bh.trading_days ?? 0 })],
+  ].map(([k, v, c, s]) =>
+    `<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div><div class="sub">${s}</div></div>`).join("");
+
+  document.getElementById("obs").innerHTML = (rep.observations || []).map(o =>
+    `<li class="${o.level}"><b>[${o.topic}]</b> ${o.message}</li>`).join("")
+    || `<li style="color:var(--faint)">${T("noObs")}</li>`;
+
+  // disposition
+  const win = bh.avg_win_holding_days, loss = bh.avg_loss_holding_days;
+  const maxHold = Math.max(win || 0, loss || 0) || 1;
+  const row = (lb, v, color) =>
+    `<div class="dispo-row"><span class="lb">${lb}</span>
+       <span class="bar-track"><span class="bar-fill" style="left:0;width:${(v || 0) / maxHold * 100}%;background:${color}"></span></span>
+       <span class="amt">${v != null ? v + " " + T("days") : "-"}</span></div>`;
+  document.getElementById("dispo").innerHTML =
+    row(T("winners"), win, css("--up")) + row(T("losers"), loss, css("--down")) +
+    `<p class="dispo-note">${
+      (win != null && loss != null)
+        ? (win < loss ? fill("dispYes", { n: (loss - win).toFixed(1) }) : T("dispNo"))
+        : T("dispNone")
+    } ${fill("medianHold", { n: bh.median_holding_days ?? "-" })}</p>`;
+
+  // P&L by symbol (rendered into both tabs)
+  const byCode = bh.realized_by_code || [];
+  const top = byCode.slice(0, 5), bottom = byCode.slice(-5).reverse();
+  const shown = [...top, ...bottom.filter(b => !top.some(t => t.code === b.code))];
+  const peak = Math.max(...shown.map(s => Math.abs(s.pnl)), 1);
+  const barsHtml = shown.map(s => {
+    const w = Math.abs(s.pnl) / peak * 50, neg = s.pnl < 0;
+    return `<div class="bar-row"><span class="nm" title="${s.code}">${s.code}</span>
+      <span class="bar-track"><span class="bar-fill" style="${neg
+        ? `right:50%;width:${w}%;background:var(--down)`
+        : `left:50%;width:${w}%;background:var(--up)`}"></span></span>
+      <span class="amt ${dir(s.pnl)}">${compact(s.pnl)}</span></div>`;
+  }).join("") || `<div class="empty">${T("noData")}</div>`;
+  document.getElementById("bycode").innerHTML = barsHtml;
+  document.getElementById("bycode2").innerHTML = barsHtml;
+
+  // tables
+  const risks = rep.position_risk || {};
+  table(document.getElementById("t-pos"), [
+    { t: "cCode", f: r => r.code, l: 1, cls: "code" }, { t: "cName", f: r => r.name || "", l: 1 },
+    { t: "cQty", f: r => fmt(r.qty, 0) }, { t: "cCost", f: r => fmt(r.cost_price, 3) },
+    { t: "cLast", f: r => fmt(r.last_price, 3) }, { t: "cValue", f: r => fmt(r.market_val) },
+    { t: "cWeight", f: r => pct(r.weight) },
+    { t: "cPl", f: r => fmt(r.pl_val), c: r => dir(r.pl_val) },
+    { t: "cPlPct", f: r => r.pl_ratio != null ? r.pl_ratio.toFixed(2) + "%" : "-", c: r => dir(r.pl_ratio) },
+    { t: "cVol", f: r => { const m = risks[r.code]; return m ? pct(m.annual_vol, 1) : "-"; } },
+    { t: "cDd", f: r => { const m = risks[r.code]; return m ? pct(m.drawdown_from_peak, 1) : "-"; },
+      c: r => { const m = risks[r.code]; return m ? dir(m.drawdown_from_peak) : ""; } },
+  ], pf.holdings_detail || []);
+
+  table(document.getElementById("t-accs"), [
+    { t: "cAccount", f: r => r.acc_id, l: 1, cls: "code" },
+    { t: "cEnv", f: r => r.trd_env, l: 1 }, { t: "cType", f: r => r.acc_type, l: 1 },
+    { t: "cFirm", f: r => r.security_firm, l: 1 },
+    { t: "cMarkets", f: r => r.trdmarket_auth || "-", l: 1 },
+    { t: "cStatus", f: r => `${r.acc_status}<span class="pill${r.acc_status === "ACTIVE" ? "" : " off"}">${
+        r.acc_status === "ACTIVE" ? T("active") : T("inactive")}</span>`, l: 1 },
+  ], rep.accounts || []);
+
+  const recon = rep.reconciliation || [];
+  document.getElementById("recon-wrap").hidden = !recon.length;
+  if (recon.length) {
+    table(document.getElementById("t-recon"), [
+      { t: "cCode", f: r => r.code, l: 1, cls: "code" },
+      { t: "cLocal", f: r => fmt(r.local_fifo_qty, 0) },
+      { t: "cBroker", f: r => fmt(r.broker_qty, 0) },
+      { t: "cDiff", f: r => fmt(r.local_fifo_qty - r.broker_qty, 0),
+        c: r => dir(r.local_fifo_qty - r.broker_qty) },
+    ], recon);
+  }
+
+  table(document.getElementById("t-trips"), [
+    { t: "cCode", f: r => r.code, l: 1, cls: "code" }, { t: "cName", f: r => r.stock_name || "", l: 1 },
+    { t: "cOpen", f: r => String(r.open_time).slice(0, 10), l: 1 },
+    { t: "cClose", f: r => String(r.close_time).slice(0, 10), l: 1 },
+    { t: "cQty", f: r => fmt(r.qty, 0) },
+    { t: "cPl", f: r => fmt(r.pnl), c: r => dir(r.pnl) },
+    { t: "cPlPct", f: r => r.pnl_pct != null ? r.pnl_pct.toFixed(2) + "%" : "-", c: r => dir(r.pnl_pct) },
+    { t: "cHold", f: r => r.holding_days },
+    { t: "cCurrency", f: r => r.currency || "-" },
+  ], rep.round_trips || []);
+
+  drawn.clear();
+  Object.values(charts).forEach(c => c.destroy());
+  Object.keys(charts).forEach(k => delete charts[k]);
+  showTab(tab);
+}
+
+/* ---------- charts ---------- */
+function chartBase() {
+  const grid = css("--line-soft"), muted = css("--muted");
+  return { responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+    plugins: { legend: { display: false },
+      tooltip: { intersect: false, mode: "index", displayColors: false, padding: 9,
+        backgroundColor: css("--text"), titleColor: css("--panel"), bodyColor: css("--panel") } },
+    scales: { x: { grid: { display: false }, border: { color: grid },
+                   ticks: { color: muted, maxTicksLimit: 7, font: { size: 10.5 } } },
+              y: { grid: { color: grid }, border: { display: false },
+                   ticks: { color: muted, font: { size: 10.5 } } } } };
+}
+
+function drawCharts(name) {
+  if (!rep || drawn.has(name)) return;
+  drawn.add(name);
+  const b = chartBase(), cur = rep.base_currency || "";
+  const accent = css("--accent"), upC = css("--up"), downC = css("--down");
+  const bh = rep.behavior || {}, pf = rep.portfolio || {};
+
+  if (name === "overview") {
+    const curve = rep.realized_curve || [];
+    if (curve.length) {
+      const ctx = document.getElementById("c-realized").getContext("2d");
+      const line = curve[curve.length - 1].cum_pnl >= 0 ? upC : downC;
+      const grad = ctx.createLinearGradient(0, 0, 0, 292);
+      grad.addColorStop(0, line + "2e"); grad.addColorStop(1, line + "00");
+      charts.realized = new Chart(ctx, { type: "line",
+        data: { labels: curve.map(d => d.date), datasets: [{ data: curve.map(d => d.cum_pnl),
+          borderColor: line, borderWidth: 2, pointRadius: 0, pointHoverRadius: 3,
+          tension: .15, fill: true, backgroundColor: grad }] },
+        options: { ...b,
+          plugins: { ...b.plugins, tooltip: { ...b.plugins.tooltip, callbacks: {
+            label: c => `${fmt(c.parsed.y)} ${cur}　(${curve[c.dataIndex].trades})` } } },
+          scales: { ...b.scales, y: { ...b.scales.y,
+            ticks: { ...b.scales.y.ticks, callback: v => compact(v) } } } } });
+    }
+    const eq = rep.equity_curve || [];
+    const box = document.getElementById("equity-box"), empty = document.getElementById("equity-empty");
+    if (eq.length >= 3) {
+      box.hidden = false; empty.hidden = true;
+      charts.equity = new Chart(document.getElementById("c-equity"), { type: "line",
+        data: { labels: eq.map(d => d.snap_date), datasets: [{ data: eq.map(d => d.total_assets),
+          borderColor: accent, borderWidth: 2, pointRadius: 0, tension: .2 }] },
+        options: { ...b, scales: { ...b.scales, y: { ...b.scales.y,
+          ticks: { ...b.scales.y.ticks, callback: v => compact(v) } } } } });
+    } else {
+      box.hidden = true; empty.hidden = false;
+      empty.innerHTML = fill("equityEmpty", { n: eq.length });
+    }
+  }
+
+  if (name === "trading") {
+    const dist = rep.pnl_distribution || [];
+    if (dist.length) {
+      charts.dist = new Chart(document.getElementById("c-dist"), { type: "bar",
+        data: { labels: dist.map(d => `${d.left}`), datasets: [{ data: dist.map(d => d.count),
+          backgroundColor: dist.map(d => d.right <= 0 ? downC : upC), borderRadius: 2 }] },
+        options: { ...b, plugins: { ...b.plugins, tooltip: { ...b.plugins.tooltip, callbacks: {
+          title: c => `${dist[c[0].dataIndex].left}% ~ ${dist[c[0].dataIndex].right}%`,
+          label: c => `${c.parsed.y}` } } },
+          scales: { ...b.scales, x: { ...b.scales.x,
+            ticks: { ...b.scales.x.ticks, maxTicksLimit: 11, callback: (v, i) => dist[i].left + "%" } } } } });
+    }
+    const tbm = Object.entries(bh.turnover_by_month || {}).sort();
+    charts.turnover = new Chart(document.getElementById("c-turnover"), { type: "bar",
+      data: { labels: tbm.map(([m]) => m), datasets: [{ data: tbm.map(([, v]) => v),
+        backgroundColor: accent, borderRadius: 1 }] },
+      options: { ...b, plugins: { ...b.plugins, tooltip: { ...b.plugins.tooltip,
+        callbacks: { label: c => fmt(c.parsed.y, 0) } } },
+        scales: { ...b.scales, y: { ...b.scales.y,
+          ticks: { ...b.scales.y.ticks, callback: v => compact(v) } } } } });
+  }
+
+  if (name === "positions") {
+    const hold = (pf.holdings_detail || []).slice(0, 10);
+    const grid = css("--line-soft"), muted = css("--muted");
+    charts.weights = new Chart(document.getElementById("c-weights"), { type: "bar",
+      data: { labels: hold.map(h => h.name || h.code), datasets: [{
+        data: hold.map(h => h.weight != null ? h.weight * 100 : 0),
+        backgroundColor: accent, borderRadius: 3, barThickness: 13 }] },
+      options: { ...b, indexAxis: "y",
+        plugins: { ...b.plugins, tooltip: { ...b.plugins.tooltip,
+          callbacks: { label: c => c.parsed.x.toFixed(2) + "%" } } },
+        scales: { x: { grid: { color: grid }, border: { display: false },
+                       ticks: { color: muted, font: { size: 10.5 }, callback: v => v + "%" } },
+                  y: { grid: { display: false }, border: { display: false },
+                       ticks: { color: muted, font: { size: 10.5 } } } } } });
+  }
+}
+
+renderChrome();
+load();
 </script>
 </body>
 </html>
