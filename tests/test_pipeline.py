@@ -55,3 +55,89 @@ def test_big_ints_survive_the_json_boundary():
     assert out["accounts"][0]["acc_id"] == "281756480175496435"
     assert out["nested"][0][0] == "281756480175496435"
     assert out["accounts"][0]["qty"] == 1200  # small ints stay numeric
+
+
+def _snapshot(**over):
+    row = {
+        "snap_date": "2026-09-10",
+        "acc_id": 1,
+        "currency": "HKD",
+        "total_assets": 269701.08,
+        "securities_assets": 269697.92,
+        "cash": -195614.90,
+        "market_val": 465312.82,
+        "power": 12837.50,
+        "risk_status": "LEVEL5",
+    }
+    row.update(over)
+    return row
+
+
+def test_account_equity_reports_leverage_in_the_requested_currency():
+    import pandas as pd
+
+    from ftrade.analysis.equity import account_equity
+    from ftrade.analysis.fx import FX
+
+    # Snapshots are stored in HKD; ask for the same figures in USD.
+    fx = FX({"HKD": 1.0, "USD": 7.8}, "HKD").rebase("USD")
+    eq = account_equity(pd.DataFrame([_snapshot()]), fx, "HKD")
+
+    assert eq["total_assets"] == 34577.06
+    assert eq["cash"] == -25078.83  # negative cash is a margin loan
+    # Exposure is gross market value over net assets, NOT securities_assets --
+    # Futu reports that as net securities equity, ~= total assets on margin.
+    assert eq["gross_exposure"] == 1.7253
+    assert eq["cash_ratio"] == -0.7253
+    assert eq["is_leveraged"] is True
+    assert eq["risk_status"] == "LEVEL5"
+
+
+def test_account_equity_ignores_placeholder_risk_status():
+    import pandas as pd
+
+    from ftrade.analysis.equity import account_equity
+    from ftrade.analysis.fx import FX
+
+    rows = pd.DataFrame(
+        [
+            _snapshot(
+                acc_id=2,
+                total_assets=0,
+                securities_assets=0,
+                cash=0,
+                market_val=0,
+                power=0,
+                risk_status="N/A",
+            ),
+            _snapshot(acc_id=1),
+        ]
+    )
+    eq = account_equity(rows, FX({"HKD": 1.0}, "HKD"), "HKD")
+
+    assert eq["risk_status"] == "LEVEL5"  # the empty account must not mask it
+    assert eq["total_assets"] == 269701.08  # summed across accounts
+
+
+def test_unleveraged_account_is_not_flagged():
+    import pandas as pd
+
+    from ftrade.analysis.equity import account_equity
+    from ftrade.analysis.fx import FX
+
+    eq = account_equity(
+        pd.DataFrame([_snapshot(total_assets=1000.0, cash=200.0, market_val=800.0)]),
+        FX({"HKD": 1.0}, "HKD"),
+        "HKD",
+    )
+    assert eq["gross_exposure"] == 0.8
+    assert eq["is_leveraged"] is False
+
+
+def test_net_asset_weights_diverge_from_securities_weights_under_margin():
+    from ftrade.analysis.equity import net_asset_weights
+
+    holdings = [{"code": "US.TQQQ", "market_val_base": 51164.0}]
+    out = net_asset_weights(holdings, net_assets=34577.06)
+
+    assert out[0]["weight_of_net"] == 1.4797  # 148% of the money actually owned

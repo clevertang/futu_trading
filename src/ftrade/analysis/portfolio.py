@@ -48,7 +48,14 @@ def summary(positions: pd.DataFrame, fx: FX, warn_threshold: float = 0.25) -> di
         "top1_weight": round(float(weights.iloc[0]), 4) if len(weights) else None,
         "top5_weight": round(float(weights.head(5).sum()), 4),
         "concentrated": [
-            {"code": r["code"], "name": r["stock_name"], "weight": round(float(r["weight"]), 4)}
+            {
+                "code": r["code"],
+                "name": r["stock_name"],
+                "weight": round(float(r["weight"]), 4),
+                "market_val_base": None
+                if pd.isna(r["market_val_base"])
+                else round(float(r["market_val_base"]), 2),
+            }
             for _, r in df.iterrows()
             if float(r["weight"] or 0) >= warn_threshold
         ],

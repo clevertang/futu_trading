@@ -29,12 +29,29 @@ def observations(report: dict, cfg) -> list[Observation]:
     bh = report.get("behavior") or {}
     thr = cfg.analysis.concentration_warn
 
+    eq = report.get("equity") or {}
+
+    # Leverage first: it reframes every concentration number below it.
+    if eq.get("is_leveraged"):
+        out.append(
+            Observation(
+                "warn",
+                "杠杆",
+                f"证券市值为净资产的 {eq['gross_exposure']:.0%}，现金 {eq.get('cash', 0):,.0f} "
+                f"{eq.get('base_currency', '')} 为负，即以融资持仓"
+                + (f"，风险等级 {eq['risk_status']}" if eq.get("risk_status") else ""),
+            )
+        )
+
     for item in pf.get("concentrated", []):
+        of_net = pf.get("net_assets") and item.get("weight_of_net")
+        extra = f"（对净资产 {item['weight_of_net']:.0%}）" if of_net else ""
         out.append(
             Observation(
                 "warn",
                 "集中度",
-                f"{item['name'] or item['code']} 占组合 {item['weight']:.1%}，超过阈值 {thr:.0%}",
+                f"{item['name'] or item['code']} 占组合 {item['weight']:.1%}{extra}，"
+                f"超过阈值 {thr:.0%}",
             )
         )
 
