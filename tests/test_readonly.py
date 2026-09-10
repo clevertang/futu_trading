@@ -1,4 +1,5 @@
 """确保网关层不含任何交易能力。"""
+
 from pathlib import Path
 
 from ftrade.gateway.base import FORBIDDEN_CALLS

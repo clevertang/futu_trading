@@ -2,6 +2,7 @@
 
 数据由固定随机种子生成，结果可复现。
 """
+
 from __future__ import annotations
 
 import random
@@ -120,9 +121,7 @@ class MockGateway:
         rows = []
         for code, name, market, cur, _base in UNIVERSE:
             sub = deals[deals["code"] == code]
-            signed = sub.apply(
-                lambda r: r["qty"] if r["trd_side"] == "BUY" else -r["qty"], axis=1
-            )
+            signed = sub.apply(lambda r: r["qty"] if r["trd_side"] == "BUY" else -r["qty"], axis=1)
             qty = float(signed.sum()) if len(sub) else 0.0
             if qty <= 0:
                 continue
@@ -156,8 +155,7 @@ class MockGateway:
         pos = self.get_positions(acc_id)
         fx = self.cfg.analysis.fx_rates or {}
         mv = sum(
-            float(r["market_val"]) * float(fx.get(r["currency"], 1.0))
-            for _, r in pos.iterrows()
+            float(r["market_val"]) * float(fx.get(r["currency"], 1.0)) for _, r in pos.iterrows()
         )
         cash = 250_000.0
         return {
@@ -172,7 +170,9 @@ class MockGateway:
 
     def get_history_deals(self, acc_id: int, start: str, end: str) -> pd.DataFrame:
         d = self._deals
-        return d[(d["create_time"] >= start[:10]) & (d["create_time"] <= end[:10] + " 23:59:59")].copy()
+        return d[
+            (d["create_time"] >= start[:10]) & (d["create_time"] <= end[:10] + " 23:59:59")
+        ].copy()
 
     def get_history_orders(self, acc_id: int, start: str, end: str) -> pd.DataFrame:
         d = self.get_history_deals(acc_id, start, end)
@@ -187,9 +187,19 @@ class MockGateway:
         out["updated_time"] = out["create_time"]
         return out[
             [
-                "order_id", "code", "stock_name", "trd_side", "order_type", "order_status",
-                "qty", "price", "dealt_qty", "dealt_avg_price", "currency",
-                "create_time", "updated_time",
+                "order_id",
+                "code",
+                "stock_name",
+                "trd_side",
+                "order_type",
+                "order_status",
+                "qty",
+                "price",
+                "dealt_qty",
+                "dealt_avg_price",
+                "currency",
+                "create_time",
+                "updated_time",
             ]
         ]
 

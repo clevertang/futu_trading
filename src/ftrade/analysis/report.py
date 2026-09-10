@@ -1,4 +1,5 @@
 """把各个分析模块拼成一份完整报告（dict），供 CLI / Web / 后续建议引擎消费。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -36,7 +37,7 @@ def build_report(db: Database, cfg, acc_id: int | None = None) -> dict:
                 )
 
     per_position_risk = {}
-    for code in (pos["code"].tolist() if not pos.empty else []):
+    for code in pos["code"].tolist() if not pos.empty else []:
         kl = repo.klines(db, code)
         m = metrics.position_volatility(kl)
         if m:

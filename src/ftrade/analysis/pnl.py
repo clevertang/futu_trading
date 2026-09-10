@@ -3,6 +3,7 @@
 富途接口给的是「当前持仓的浮盈」，做长期复盘需要自己把每一笔买卖配对成
 完整的一轮交易（round trip），才能算胜率、持有期、已实现盈亏。
 """
+
 from __future__ import annotations
 
 from collections import deque

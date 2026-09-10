@@ -1,4 +1,5 @@
 """净值曲线与风险指标。"""
+
 from __future__ import annotations
 
 import math
