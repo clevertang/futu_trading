@@ -37,6 +37,18 @@ analysis:
   # 无风险利率（年化），用于 Sharpe
   risk_free_rate: 0.03
 
+  # 公司行为。成交流水里不存在这些事件，只能手工声明，否则 FIFO 会看到
+  # 「没买过却卖出」「买了永不平仓」这类无法配对的残留。
+  #   rename —— 改名 / SPAC 合并 / 换代码；date 之前的成交改写为新代码
+  #   split  —— 拆股；date 之前的成交数量 ×ratio、价格 ÷ratio，
+  #             同时把该标的的期权合约按同一比例重新定价（行权价 ÷ratio）
+  corporate_actions: []
+  # 示例（请按自己的账户填写，并核对生效日）：
+  # corporate_actions:
+  #   - {type: rename, from: US.CLA,  to: US.OUST, date: "2021-03-12"}
+  #   - {type: rename, from: US.TRXC, to: US.ASXC, date: "2021-04-01"}
+  #   - {type: split,  code: US.TQQQ, ratio: 2,    date: "2025-11-18"}
+
 web:
   host: 127.0.0.1
   port: 8765

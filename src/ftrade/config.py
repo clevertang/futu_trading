@@ -43,6 +43,8 @@ class AnalysisConfig:
     base_currency: str = "HKD"
     fx_rates: dict[str, float] = field(default_factory=dict)
     concentration_warn: float = 0.25
+    # Corporate actions cannot be detected from the deal feed; they are declared.
+    corporate_actions: list = field(default_factory=list)
     risk_free_rate: float = 0.03
 
 
