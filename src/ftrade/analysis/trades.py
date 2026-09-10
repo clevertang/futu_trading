@@ -5,7 +5,13 @@ from __future__ import annotations
 import pandas as pd
 
 
-def behavior(trips: pd.DataFrame, deals: pd.DataFrame) -> dict:
+def behavior(trips: pd.DataFrame, deals: pd.DataFrame, fx=None) -> dict:
+    """Trading-behaviour statistics.
+
+    ``fx`` converts each round trip into the base currency before aggregating.
+    Without it, summing ``pnl`` across a mixed HK/US history adds HKD to USD as
+    if they were the same unit.
+    """
     out: dict = {}
 
     if deals is not None and not deals.empty:
@@ -31,6 +37,8 @@ def behavior(trips: pd.DataFrame, deals: pd.DataFrame) -> dict:
         return out
 
     t = trips.copy()
+    if fx is not None and "currency" in t:
+        t["pnl"] = [fx.to_base(p, c) or 0.0 for p, c in zip(t["pnl"], t["currency"], strict=True)]
     wins = t[t["pnl"] > 0]
     losses = t[t["pnl"] < 0]
     out.update(

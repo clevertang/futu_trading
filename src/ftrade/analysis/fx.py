@@ -21,3 +21,24 @@ class FX:
         if rate is None:
             return None
         return float(amount) * float(rate)
+
+
+# Futu codes are market-prefixed ("US.AAPL", "HK.00700"). The deals table has no
+# currency column, so the prefix is the only currency signal available for a
+# symbol that is no longer held.
+MARKET_CURRENCY = {
+    "HK": "HKD",
+    "US": "USD",
+    "JP": "JPY",
+    "SH": "CNH",
+    "SZ": "CNH",
+    "SG": "SGD",
+    "AU": "AUD",
+}
+
+
+def currency_for_code(code: str | None) -> str | None:
+    """Best-effort currency for a symbol, from its market prefix."""
+    if not code or "." not in str(code):
+        return None
+    return MARKET_CURRENCY.get(str(code).split(".", 1)[0].upper())
