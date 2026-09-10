@@ -20,9 +20,11 @@ def test_end_to_end(tmp_path):
     assert rep["portfolio"]["holdings"] > 0
     assert rep["portfolio"]["market_value"] > 0
     assert rep["behavior"]["deal_count"] == stats["deals"]
-    # 权重之和应当接近 1
-    total_w = sum(h["weight"] or 0 for h in rep["portfolio"]["holdings_detail"])
-    assert abs(total_w - 1) < 1e-6
+    # Weights are rounded to 4 dp per holding, so the sum can drift by up to
+    # 0.00005 per holding -- assert within that bound rather than exact equality.
+    detail = rep["portfolio"]["holdings_detail"]
+    total_w = sum(h["weight"] or 0 for h in detail)
+    assert abs(total_w - 1) < 5e-5 * len(detail) + 1e-9
 
     obs = observations(rep, cfg)
     assert obs and all(o.level in ("info", "warn") for o in obs)
