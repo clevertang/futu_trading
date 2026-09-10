@@ -1,4 +1,5 @@
 """本地只读 Web 面板（FastAPI）。默认只监听 127.0.0.1。"""
+
 from __future__ import annotations
 
 import json

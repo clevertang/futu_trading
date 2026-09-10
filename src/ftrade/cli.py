@@ -1,4 +1,5 @@
 """ftrade 命令行入口。"""
+
 from __future__ import annotations
 
 import argparse
@@ -52,9 +53,7 @@ def cmd_init(args, cfg) -> int:
 
 def cmd_sync(args, cfg) -> int:
     with _db(cfg) as db, build_gateway(cfg, args.source) as gw:
-        stats = SyncService(db, gw, cfg).sync_all(
-            full=args.full, with_klines=not args.no_klines
-        )
+        stats = SyncService(db, gw, cfg).sync_all(full=args.full, with_klines=not args.no_klines)
     console.print("[green]同步完成：", stats)
     return 0
 
@@ -72,8 +71,12 @@ def cmd_positions(args, cfg) -> int:
         t.add_column(col, justify="right" if col not in ("代码", "名称", "市场") else "left")
     for h in pf["holdings_detail"]:
         t.add_row(
-            h["code"], str(h["name"] or ""), str(h["market"] or ""),
-            _fmt(h["qty"], 0), _fmt(h["cost_price"], 3), _fmt(h["last_price"], 3),
+            h["code"],
+            str(h["name"] or ""),
+            str(h["market"] or ""),
+            _fmt(h["qty"], 0),
+            _fmt(h["cost_price"], 3),
+            _fmt(h["last_price"], 3),
             _fmt(h["market_val"]),
             f"{h['weight']:.1%}" if h["weight"] is not None else "-",
             _fmt(h["pl_val"]),
@@ -100,9 +103,12 @@ def cmd_deals(args, cfg) -> int:
         t.add_column(col)
     for _, r in df.iterrows():
         t.add_row(
-            str(r["create_time"])[:16], r["code"], str(r["stock_name"] or ""),
+            str(r["create_time"])[:16],
+            r["code"],
+            str(r["stock_name"] or ""),
             str(r["trd_side"]).replace("TrdSide.", ""),
-            _fmt(r["qty"], 0), _fmt(r["price"], 3),
+            _fmt(r["qty"], 0),
+            _fmt(r["price"], 3),
             _fmt(float(r["qty"] or 0) * float(r["price"] or 0)),
         )
     console.print(t)
@@ -117,15 +123,32 @@ def cmd_trips(args, cfg) -> int:
         console.print("[yellow]还没有已平仓的完整交易")
         return 1
     t = Table(title="已平仓交易（FIFO 配对，最近 50 笔）")
-    for col in ("代码", "名称", "开仓", "平仓", "数量", "开仓价", "平仓价", "盈亏", "盈亏%", "持有天"):
+    for col in (
+        "代码",
+        "名称",
+        "开仓",
+        "平仓",
+        "数量",
+        "开仓价",
+        "平仓价",
+        "盈亏",
+        "盈亏%",
+        "持有天",
+    ):
         t.add_column(col)
     for r in trips[: args.limit]:
         color = "green" if r["pnl"] > 0 else "red"
         t.add_row(
-            r["code"], str(r["stock_name"] or ""), r["open_time"], r["close_time"],
-            _fmt(r["qty"], 0), _fmt(r["open_price"], 3), _fmt(r["close_price"], 3),
+            r["code"],
+            str(r["stock_name"] or ""),
+            r["open_time"],
+            r["close_time"],
+            _fmt(r["qty"], 0),
+            _fmt(r["open_price"], 3),
+            _fmt(r["close_price"], 3),
             f"[{color}]{_fmt(r['pnl'])}[/{color}]",
-            f"[{color}]{r['pnl_pct']:.2f}%[/{color}]", str(r["holding_days"]),
+            f"[{color}]{r['pnl_pct']:.2f}%[/{color}]",
+            str(r["holding_days"]),
         )
     console.print(t)
     b = rep["behavior"]
@@ -174,8 +197,7 @@ def cmd_report(args, cfg) -> int:
         style = "yellow" if o.level == "warn" else "cyan"
         console.print(f"[{style}]· [{o.topic}] {o.message}")
     console.print(
-        "\n[dim]以上为基于历史数据的事实性统计，不构成投资建议。"
-        "建议引擎见 ROADMAP 的 Phase 2。"
+        "\n[dim]以上为基于历史数据的事实性统计，不构成投资建议。建议引擎见 ROADMAP 的 Phase 2。"
     )
     return 0
 

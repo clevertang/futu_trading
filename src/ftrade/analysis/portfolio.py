@@ -1,4 +1,5 @@
 """持仓结构分析：权重、集中度、市场/币种暴露。"""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -28,9 +29,7 @@ def summary(positions: pd.DataFrame, fx: FX, warn_threshold: float = 0.25) -> di
     weights = df["weight"].fillna(0.0)
     hhi = float((weights**2).sum())
 
-    by_market = (
-        df.groupby("position_market")["market_val_base"].sum().sort_values(ascending=False)
-    )
+    by_market = df.groupby("position_market")["market_val_base"].sum().sort_values(ascending=False)
     by_currency = df.groupby("currency")["market_val_base"].sum().sort_values(ascending=False)
 
     unrealized = float(df["pl_val_base"].dropna().sum())
@@ -63,7 +62,9 @@ def summary(positions: pd.DataFrame, fx: FX, warn_threshold: float = 0.25) -> di
                 "cost_price": r["cost_price"],
                 "last_price": r["nominal_price"],
                 "market_val": r["market_val"],
-                "market_val_base": None if pd.isna(r["market_val_base"]) else round(float(r["market_val_base"]), 2),
+                "market_val_base": None
+                if pd.isna(r["market_val_base"])
+                else round(float(r["market_val_base"]), 2),
                 "weight": None if pd.isna(r["weight"]) else round(float(r["weight"]), 4),
                 "pl_val": r["pl_val"],
                 "pl_ratio": r["pl_ratio"],

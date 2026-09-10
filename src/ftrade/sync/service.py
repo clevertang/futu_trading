@@ -3,6 +3,7 @@
 富途只保留有限的历史，且历史查询单次最多 90 天，
 所以「自己存一份」是做长期归因分析的前提。
 """
+
 from __future__ import annotations
 
 import logging

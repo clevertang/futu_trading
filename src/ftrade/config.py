@@ -1,4 +1,5 @@
 """配置加载。"""
+
 from __future__ import annotations
 
 import os

@@ -1,4 +1,5 @@
 """用 Mock 网关跑通 同步 -> 分析 -> 报告 的完整链路。"""
+
 from ftrade.advice import observations
 from ftrade.analysis import build_report
 from ftrade.config import load_config

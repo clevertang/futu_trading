@@ -1,4 +1,5 @@
 """极简汇率换算：低频场景下用配置里的静态汇率即可。"""
+
 from __future__ import annotations
 
 

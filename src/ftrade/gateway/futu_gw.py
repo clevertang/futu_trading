@@ -3,6 +3,7 @@
 需要本机运行 OpenD 网关程序（默认 127.0.0.1:11111）。
 本模块**不导入也不调用**任何下单相关接口。
 """
+
 from __future__ import annotations
 
 import logging
@@ -105,7 +106,9 @@ class FutuGateway:
     def _quote(self):
         if self._quote_ctx is None:
             futu = _futu()
-            self._quote_ctx = futu.OpenQuoteContext(host=self.cfg.futu.host, port=self.cfg.futu.port)
+            self._quote_ctx = futu.OpenQuoteContext(
+                host=self.cfg.futu.host, port=self.cfg.futu.port
+            )
         return self._quote_ctx
 
     def _env(self):
@@ -132,7 +135,9 @@ class FutuGateway:
             if attempt >= MAX_RETRIES or not any(h in msg for h in _RATE_LIMIT_HINTS):
                 raise GatewayError(f"{what} 失败：{data}")
             backoff = min(35.0, 5.0 * 2**attempt)
-            log.warning("%s 触发限频，%.0fs 后重试（%d/%d）", what, backoff, attempt + 1, MAX_RETRIES)
+            log.warning(
+                "%s 触发限频，%.0fs 后重试（%d/%d）", what, backoff, attempt + 1, MAX_RETRIES
+            )
             time.sleep(backoff)
         raise GatewayError(f"{what} 失败：重试 {MAX_RETRIES} 次仍被限频")
 

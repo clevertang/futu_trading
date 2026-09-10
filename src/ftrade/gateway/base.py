@@ -3,6 +3,7 @@
 设计约束：本层**只读**。任何下单/改单/撤单/解锁交易的能力都不在接口里，
 也不允许在实现中出现，这样即使上层代码写错也不可能触发真实交易。
 """
+
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable

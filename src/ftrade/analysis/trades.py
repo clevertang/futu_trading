@@ -1,4 +1,5 @@
 """交易行为统计：低频交易者最该看的是「我是不是把好票卖早了」。"""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -22,8 +23,7 @@ def behavior(trips: pd.DataFrame, deals: pd.DataFrame) -> dict:
             k: round(float(v), 2) for k, v in d.groupby("month")["turnover"].sum().items()
         }
         out["most_traded"] = [
-            {"code": k, "deals": int(v)}
-            for k, v in d["code"].value_counts().head(5).items()
+            {"code": k, "deals": int(v)} for k, v in d["code"].value_counts().head(5).items()
         ]
 
     if trips is None or trips.empty:
@@ -47,7 +47,9 @@ def behavior(trips: pd.DataFrame, deals: pd.DataFrame) -> dict:
         avg_holding_days=round(float(t["holding_days"].mean()), 1),
         median_holding_days=float(t["holding_days"].median()),
         avg_win_holding_days=round(float(wins["holding_days"].mean()), 1) if len(wins) else None,
-        avg_loss_holding_days=round(float(losses["holding_days"].mean()), 1) if len(losses) else None,
+        avg_loss_holding_days=round(float(losses["holding_days"].mean()), 1)
+        if len(losses)
+        else None,
         best_trade=t.loc[t["pnl"].idxmax()].to_dict() if len(t) else None,
         worst_trade=t.loc[t["pnl"].idxmin()].to_dict() if len(t) else None,
         realized_by_code=[
