@@ -1,10 +1,12 @@
 """SQLite 连接与建表。"""
+
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
 
 import pandas as pd
 
@@ -35,7 +37,7 @@ class Database:
     def close(self) -> None:
         self.conn.close()
 
-    def __enter__(self) -> "Database":
+    def __enter__(self) -> Database:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -58,9 +60,7 @@ class Database:
             return 0
         cols = list(rows[0].keys())
         placeholders = ", ".join("?" for _ in cols)
-        sql = (
-            f"INSERT OR REPLACE INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"
-        )
+        sql = f"INSERT OR REPLACE INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"
         payload = [tuple(r.get(c) for c in cols) for r in rows]
         with self.tx() as conn:
             conn.executemany(sql, payload)
@@ -75,9 +75,7 @@ class Database:
             )
 
     def get_state(self, key: str, default: str | None = None) -> str | None:
-        row = self.conn.execute(
-            "SELECT value FROM sync_state WHERE key = ?", (key,)
-        ).fetchone()
+        row = self.conn.execute("SELECT value FROM sync_state WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default
 
     # ---------- 读取 ----------

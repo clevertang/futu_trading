@@ -2,6 +2,7 @@
 name = "ftrade"
 version = "0.1.0"
 description = "Personal low-frequency trading analytics platform on top of Futu OpenAPI (read-only)"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "futu-api>=9.0.0",
@@ -14,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.4"]
 
 [project.scripts]
 ftrade = "ftrade.cli:main"
@@ -29,3 +30,12 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+# Pin the rule set explicitly. Ruff's defaults widen between releases, which
+# would turn CI red on an unrelated PR the day a new rule ships.
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --strict-config"
+testpaths = ["tests"]

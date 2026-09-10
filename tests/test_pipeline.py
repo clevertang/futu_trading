@@ -1,4 +1,5 @@
 """用 Mock 网关跑通 同步 -> 分析 -> 报告 的完整链路。"""
+
 from ftrade.advice import observations
 from ftrade.analysis import build_report
 from ftrade.config import load_config
@@ -41,3 +42,16 @@ def test_incremental_sync_is_idempotent(tmp_path):
     svc.sync_all(full=False)
     assert db.scalar("SELECT COUNT(*) FROM deals") == n1
     db.close()
+
+
+def test_big_ints_survive_the_json_boundary():
+    from ftrade.web.app import _clean
+
+    # Real Futu account ids are 18 digits -- past JavaScript's 2**53-1, where
+    # JSON.parse silently rewrites the trailing digits.
+    acc = 281756480175496435
+    out = _clean({"accounts": [{"acc_id": acc, "qty": 1200}], "nested": [[acc]]})
+
+    assert out["accounts"][0]["acc_id"] == "281756480175496435"
+    assert out["nested"][0][0] == "281756480175496435"
+    assert out["accounts"][0]["qty"] == 1200  # small ints stay numeric

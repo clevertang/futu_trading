@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Action versions are floating majors (@v4/@v5); Dependabot is what keeps
+  # them current, since nothing else in CI pins them.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
+    open-pull-requests-limit: 5

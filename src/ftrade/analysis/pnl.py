@@ -3,10 +3,11 @@
 富途接口给的是「当前持仓的浮盈」，做长期复盘需要自己把每一笔买卖配对成
 完整的一轮交易（round trip），才能算胜率、持有期、已实现盈亏。
 """
+
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 
 import pandas as pd
@@ -128,8 +129,8 @@ def open_lots(deals: pd.DataFrame) -> pd.DataFrame:
                     remaining -= take
                     if lots[0][0] <= 1e-9:
                         lots.popleft()
-        total = sum(l[0] for l in lots)
+        total = sum(lot[0] for lot in lots)
         if total > 1e-9:
-            cost = sum(l[0] * l[1] for l in lots) / total
+            cost = sum(lot[0] * lot[1] for lot in lots) / total
             rows.append({"code": code, "qty": round(total, 4), "avg_cost": round(cost, 4)})
     return pd.DataFrame(rows)

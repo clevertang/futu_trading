@@ -3,6 +3,7 @@
 Phase 1 的目标是把「客观事实」摆出来：集中度、币种错配、处置效应、数据缺口。
 真正的投资建议留到 Phase 2 接入 LLM 时再做，接口见 AdviceEngine。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -39,18 +40,14 @@ def observations(report: dict, cfg) -> list[Observation]:
 
     eff = pf.get("effective_positions")
     if eff is not None and eff < 3:
-        out.append(
-            Observation("warn", "分散度", f"有效持仓数仅 {eff}，组合高度依赖少数标的")
-        )
+        out.append(Observation("warn", "分散度", f"有效持仓数仅 {eff}，组合高度依赖少数标的"))
 
     by_cur = pf.get("by_currency") or {}
     total = sum(by_cur.values()) or 1
     for cur, val in by_cur.items():
         share = val / total
         if cur != cfg.analysis.base_currency and share > 0.7:
-            out.append(
-                Observation("info", "币种暴露", f"{share:.0%} 的市值在 {cur}，存在汇率敞口")
-            )
+            out.append(Observation("info", "币种暴露", f"{share:.0%} 的市值在 {cur}，存在汇率敞口"))
 
     if bh.get("disposition_effect"):
         out.append(
@@ -85,9 +82,7 @@ def observations(report: dict, cfg) -> list[Observation]:
 
     risk = report.get("risk") or {}
     if risk.get("max_drawdown") is not None and risk["max_drawdown"] < -0.2:
-        out.append(
-            Observation("info", "回撤", f"快照区间最大回撤 {risk['max_drawdown']:.1%}")
-        )
+        out.append(Observation("info", "回撤", f"快照区间最大回撤 {risk['max_drawdown']:.1%}"))
 
     if not out:
         out.append(Observation("info", "总体", "未触发任何风险规则"))
