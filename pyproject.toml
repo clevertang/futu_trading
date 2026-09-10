@@ -1,0 +1,31 @@
+[project]
+name = "ftrade"
+version = "0.1.0"
+description = "Personal low-frequency trading analytics platform on top of Futu OpenAPI (read-only)"
+requires-python = ">=3.10"
+dependencies = [
+    "futu-api>=9.0.0",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[project.scripts]
+ftrade = "ftrade.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

@@ -1,0 +1,190 @@
+"""富途 OpenAPI 只读网关。
+
+需要本机运行 OpenD 网关程序（默认 127.0.0.1:11111）。
+本模块**不导入也不调用**任何下单相关接口。
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import pandas as pd
+
+from .base import GatewayError, to_str
+
+log = logging.getLogger(__name__)
+
+
+def _futu():
+    try:
+        import futu  # type: ignore
+    except ImportError as exc:  # pragma: no cover - 依赖缺失时的友好提示
+        raise GatewayError(
+            "未安装 futu-api，请先 `pip install futu-api`，并启动 OpenD 网关。"
+        ) from exc
+    return futu
+
+
+class FutuGateway:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self._trade_ctxs: dict[str, Any] = {}
+        self._quote_ctx: Any = None
+        self._acc_market: dict[int, str] = {}
+
+    # ---------- 生命周期 ----------
+
+    def __enter__(self) -> "FutuGateway":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+    def close(self) -> None:
+        for ctx in self._trade_ctxs.values():
+            try:
+                ctx.close()
+            except Exception:  # pragma: no cover
+                log.debug("关闭交易连接失败", exc_info=True)
+        self._trade_ctxs.clear()
+        if self._quote_ctx is not None:
+            try:
+                self._quote_ctx.close()
+            finally:
+                self._quote_ctx = None
+
+    # ---------- 连接 ----------
+
+    def _trade_ctx(self, market: str):
+        if market in self._trade_ctxs:
+            return self._trade_ctxs[market]
+        futu = _futu()
+        f = self.cfg.futu
+        try:
+            ctx = futu.OpenSecTradeContext(
+                filter_trdmarket=getattr(futu.TrdMarket, market),
+                host=f.host,
+                port=f.port,
+                security_firm=getattr(futu.SecurityFirm, f.security_firm),
+            )
+        except Exception as exc:
+            raise GatewayError(
+                f"连接 OpenD 失败（{f.host}:{f.port}），请确认网关已启动并已登录：{exc}"
+            ) from exc
+        self._trade_ctxs[market] = ctx
+        return ctx
+
+    def _quote(self):
+        if self._quote_ctx is None:
+            futu = _futu()
+            self._quote_ctx = futu.OpenQuoteContext(host=self.cfg.futu.host, port=self.cfg.futu.port)
+        return self._quote_ctx
+
+    def _env(self):
+        futu = _futu()
+        return getattr(futu.TrdEnv, self.cfg.futu.trd_env)
+
+    @staticmethod
+    def _check(ret, data, what: str) -> pd.DataFrame:
+        futu = _futu()
+        if ret != futu.RET_OK:
+            raise GatewayError(f"{what} 失败：{data}")
+        return data
+
+    # ---------- 查询 ----------
+
+    def get_accounts(self) -> pd.DataFrame:
+        rows: dict[int, dict[str, Any]] = {}
+        for market in self.cfg.futu.markets:
+            ctx = self._trade_ctx(market)
+            df = self._check(*ctx.get_acc_list(), what=f"获取账户列表({market})")
+            for _, r in df.iterrows():
+                acc_id = int(r["acc_id"])
+                self._acc_market.setdefault(acc_id, market)
+                rows[acc_id] = {
+                    "acc_id": acc_id,
+                    "trd_env": to_str(r.get("trd_env")),
+                    "acc_type": to_str(r.get("acc_type")),
+                    "security_firm": to_str(r.get("security_firm")),
+                    "card_num": to_str(r.get("card_num")),
+                    "trdmarket_auth": to_str(r.get("trdmarket_auth")),
+                    "acc_status": to_str(r.get("acc_status")),
+                }
+        return pd.DataFrame(list(rows.values()))
+
+    def _ctx_for(self, acc_id: int):
+        market = self._acc_market.get(acc_id)
+        if market is None:
+            self.get_accounts()
+            market = self._acc_market.get(acc_id)
+        if market is None:
+            raise GatewayError(f"账户 {acc_id} 不在配置的市场 {self.cfg.futu.markets} 中")
+        return self._trade_ctx(market)
+
+    def get_account_info(self, acc_id: int, currency: str) -> dict[str, Any]:
+        futu = _futu()
+        ctx = self._ctx_for(acc_id)
+        df = self._check(
+            *ctx.accinfo_query(
+                trd_env=self._env(),
+                acc_id=acc_id,
+                refresh_cache=True,
+                currency=getattr(futu.Currency, currency),
+            ),
+            what="获取账户资金",
+        )
+        if df.empty:
+            return {}
+        return df.iloc[0].to_dict()
+
+    def get_positions(self, acc_id: int) -> pd.DataFrame:
+        ctx = self._ctx_for(acc_id)
+        df = self._check(
+            *ctx.position_list_query(trd_env=self._env(), acc_id=acc_id, refresh_cache=True),
+            what="获取持仓",
+        )
+        return df if df is not None else pd.DataFrame()
+
+    def get_history_deals(self, acc_id: int, start: str, end: str) -> pd.DataFrame:
+        ctx = self._ctx_for(acc_id)
+        df = self._check(
+            *ctx.history_deal_list_query(
+                start=start, end=end, trd_env=self._env(), acc_id=acc_id
+            ),
+            what=f"获取历史成交 {start}~{end}",
+        )
+        return df if df is not None else pd.DataFrame()
+
+    def get_history_orders(self, acc_id: int, start: str, end: str) -> pd.DataFrame:
+        ctx = self._ctx_for(acc_id)
+        df = self._check(
+            *ctx.history_order_list_query(
+                start=start, end=end, trd_env=self._env(), acc_id=acc_id
+            ),
+            what=f"获取历史订单 {start}~{end}",
+        )
+        return df if df is not None else pd.DataFrame()
+
+    def get_klines(self, code: str, start: str, end: str) -> pd.DataFrame:
+        futu = _futu()
+        ctx = self._quote()
+        frames: list[pd.DataFrame] = []
+        page_key = None
+        while True:
+            ret, data, page_key = ctx.request_history_kline(
+                code,
+                start=start,
+                end=end,
+                ktype=futu.KLType.K_DAY,
+                autype=futu.AuType.QFQ,
+                max_count=1000,
+                page_req_key=page_key,
+            )
+            if ret != futu.RET_OK:
+                raise GatewayError(f"获取 {code} 日线失败：{data}")
+            frames.append(data)
+            if page_key is None:
+                break
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True)

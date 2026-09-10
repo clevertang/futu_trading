@@ -1,0 +1,42 @@
+# 复制为 config.yaml 后按需修改（config.yaml 已被 .gitignore 忽略）
+
+futu:
+  host: 127.0.0.1
+  port: 11111
+  # 券商主体：FUTUSECURITIES(港) / FUTUINC(美) / FUTUSG(新) / FUTUAU(澳)
+  security_firm: FUTUSECURITIES
+  # 需要接入的交易市场，会为每个市场建立一个只读交易连接
+  markets: [HK, US]
+  # REAL 或 SIMULATE
+  trd_env: REAL
+  # 解锁交易密码 —— 本项目为只读，不需要，故此处刻意不提供该配置项
+
+storage:
+  db_path: data/ftrade.db
+
+sync:
+  # 首次全量拉取成交记录的起始日期
+  deals_start: "2020-01-01"
+  # 单次历史查询窗口（富途上限 90 天）
+  window_days: 90
+  # 同步 K 线用于计算净值/波动率
+  kline_lookback_days: 400
+
+analysis:
+  # 报告与汇总使用的本位币
+  base_currency: HKD
+  # 静态汇率（相对本位币）。为空则只按币种分组，不做合并汇总。
+  # 低频交易场景下人工维护即可；后续可换成实时汇率源。
+  fx_rates:
+    HKD: 1.0
+    USD: 7.8
+    CNH: 1.08
+    JPY: 0.052
+  # 单一标的占比超过该阈值时提示集中度风险
+  concentration_warn: 0.25
+  # 无风险利率（年化），用于 Sharpe
+  risk_free_rate: 0.03
+
+web:
+  host: 127.0.0.1
+  port: 8765
