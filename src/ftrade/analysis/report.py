@@ -6,7 +6,7 @@ from datetime import datetime
 
 from ..storage import repo
 from ..storage.db import Database
-from . import metrics, portfolio, trades
+from . import equity, metrics, portfolio, trades
 from .fx import FX, currency_for_code
 from .pnl import fifo_round_trips, open_lots
 
@@ -53,6 +53,18 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
         if m:
             per_position_risk[code] = m
 
+    acct = equity.account_equity(snaps, fx, a.base_currency)
+    pf = portfolio.summary(pos, fx, a.concentration_warn)
+    net = acct.get("total_assets")
+    pf["holdings_detail"] = equity.net_asset_weights(pf.get("holdings_detail", []), net)
+    pf["concentrated"] = equity.net_asset_weights(pf.get("concentrated", []), net)
+    if net:
+        pf["net_assets"] = net
+        top = pf.get("top1_weight")
+        mv = pf.get("market_value") or 0.0
+        pf["top1_weight_of_net"] = round(top * mv / net, 4) if top is not None else None
+        pf["gross_exposure"] = acct.get("gross_exposure")
+
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "snapshot_date": repo.latest_snapshot_date(db, acc_id),
@@ -60,7 +72,8 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
         "base_currency": fx.base,
         "available_currencies": fx.currencies(),
         "accounts": repo.accounts(db).to_dict("records"),
-        "portfolio": portfolio.summary(pos, fx, a.concentration_warn),
+        "equity": acct,
+        "portfolio": pf,
         "risk": metrics.risk_metrics(curve, a.risk_free_rate),
         "equity_curve": curve[["snap_date", "total_assets", "drawdown"]].to_dict("records")
         if not curve.empty

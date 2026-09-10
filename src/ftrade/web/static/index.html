@@ -133,6 +133,11 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
   <!-- ============ Overview ============ -->
   <div id="tab-overview" role="tabpanel">
     <div class="cards num" id="cards"></div>
+    <section style="margin-bottom:14px" id="capital-wrap" hidden>
+      <h2 data-t="capital"></h2><p class="hint" data-t="capitalHint"></p>
+      <div class="tw"><table class="num" id="t-capital"></table></div>
+      <p class="dispo-note" id="capital-note" style="border-top:none;padding-top:10px"></p>
+    </section>
     <div class="grid two">
       <section>
         <h2 data-t="realizedCurve"></h2><p class="hint" data-t="realizedCurveHint"></p>
@@ -305,15 +310,43 @@ function renderAll() {
     `${T("snapshot")} <b>${rep.snapshot_date || "-"}</b>　${T("syncedAt")} <b>${rep.last_sync_at || "-"}</b><br>` +
     `${T("dealRange")} <b>${bh.first_deal || "-"}</b> → <b>${bh.last_deal || "-"}</b>`;
 
-  document.getElementById("cards").innerHTML = [
+  const eq = rep.equity || {};
+  const cards = [];
+  if (eq.total_assets != null) {
+    cards.push([T("netAssets"), fmt(eq.total_assets), "",
+      eq.is_leveraged ? fill("netAssetsSub", { n: compact(Math.abs(eq.cash || 0)) }) : cur]);
+  }
+  cards.push(...[
     [T("marketValue"), fmt(pf.market_value), "", fill("holdingsSub", { n: pf.holdings ?? 0, e: pf.effective_positions ?? "-" })],
     [T("unrealized"), fmt(pf.unrealized_pl), dir(pf.unrealized_pl), cur],
     [T("realized"), fmt(bh.realized_pnl), dir(bh.realized_pnl), fill("roundTripsSub", { n: bh.round_trips ?? 0 })],
     [T("winRate"), bh.win_rate != null ? pct(bh.win_rate, 1) : "-", "", fill("profitFactorSub", { v: bh.profit_factor ?? "-" })],
     [T("avgWinLoss"), `${compact(bh.avg_win)} / ${compact(bh.avg_loss)}`, "", fill("perTradeSub", { cur })],
     [T("monthlyDeals"), bh.deals_per_month ?? "-", "", fill("dealsSub", { n: bh.deal_count ?? 0, d: bh.trading_days ?? 0 })],
-  ].map(([k, v, c, s]) =>
+  ]);
+  document.getElementById("cards").innerHTML = cards.map(([k, v, c, s]) =>
     `<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div><div class="sub">${s}</div></div>`).join("");
+
+  // capital breakdown
+  const capWrap = document.getElementById("capital-wrap");
+  capWrap.hidden = eq.total_assets == null;
+  if (!capWrap.hidden) {
+    const rows = [
+      [T("netAssets"), fmt(eq.total_assets), ""],
+      [T("cSecurities"), fmt(eq.market_val), ""],
+      [T("cCashRow"), fmt(eq.cash), dir(eq.cash)],
+      [T("cExposure"), eq.gross_exposure != null ? pct(eq.gross_exposure, 1) : "-",
+        eq.is_leveraged ? "down" : ""],
+      [T("cBuyingPower"), fmt(eq.power), ""],
+      [T("cRisk"), eq.risk_status || "-", ""],
+    ];
+    document.getElementById("t-capital").innerHTML =
+      "<tbody>" + rows.map(([k, v, c]) =>
+        `<tr><td class="l" style="color:var(--muted)">${k}</td><td class="${c}">${v}</td></tr>`
+      ).join("") + "</tbody>";
+    document.getElementById("capital-note").innerHTML = eq.is_leveraged
+      ? fill("exposureNote", { n: pct(eq.gross_exposure, 0) }) : "";
+  }
 
   document.getElementById("obs").innerHTML = (rep.observations || []).map(o =>
     `<li class="${o.level}"><b>[${o.topic}]</b> ${o.message}</li>`).join("")
@@ -357,6 +390,7 @@ function renderAll() {
     { t: "cQty", f: r => fmt(r.qty, 0) }, { t: "cCost", f: r => fmt(r.cost_price, 3) },
     { t: "cLast", f: r => fmt(r.last_price, 3) }, { t: "cValue", f: r => fmt(r.market_val) },
     { t: "cWeight", f: r => pct(r.weight) },
+    { t: "ofNet", f: r => r.weight_of_net != null ? pct(r.weight_of_net) : "-" },
     { t: "cPl", f: r => fmt(r.pl_val), c: r => dir(r.pl_val) },
     { t: "cPlPct", f: r => r.pl_ratio != null ? r.pl_ratio.toFixed(2) + "%" : "-", c: r => dir(r.pl_ratio) },
     { t: "cVol", f: r => { const m = risks[r.code]; return m ? pct(m.annual_vol, 1) : "-"; } },
