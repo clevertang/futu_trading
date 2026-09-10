@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import random
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
@@ -47,7 +47,7 @@ class MockGateway:
         self.prices = {c: _price_series(c, base, days) for c, _n, _m, _cur, base in UNIVERSE}
         self._deals = self._make_deals()
 
-    def __enter__(self) -> "MockGateway":
+    def __enter__(self) -> MockGateway:
         return self
 
     def __exit__(self, *exc: Any) -> None:

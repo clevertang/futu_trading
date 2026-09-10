@@ -29,3 +29,8 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+# Pin the rule set explicitly. Ruff's defaults widen between releases, which
+# would turn CI red on an unrelated PR the day a new rule ships.
+select = ["E4", "E7", "E9", "F", "I", "UP"]
