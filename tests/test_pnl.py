@@ -1,3 +1,5 @@
+from datetime import date
+
 import pandas as pd
 
 from ftrade.analysis.pnl import fifo_round_trips, open_lots
@@ -152,3 +154,99 @@ def test_fx_rebase_is_a_noop_for_unknown_currency():
     fx = FX({"HKD": 1.0, "USD": 7.8}, "HKD")
     assert fx.rebase("BTC") is fx
     assert fx.rebase("HKD") is fx
+
+
+def test_option_symbol_parsing():
+    from datetime import date
+
+    from ftrade.analysis.instruments import contract_multiplier, is_option, parse_option
+
+    p = parse_option("US.TQQQ260911C75000")
+    assert p["underlying"] == "US.TQQQ"
+    assert p["expiry"] == date(2026, 9, 11)
+    assert p["kind"] == "CALL"
+    assert p["strike"] == 75.0
+    assert contract_multiplier("US.TQQQ260911C75000") == 100
+
+    assert not is_option("US.TQQQ")
+    assert contract_multiplier("US.TQQQ") == 1  # plain shares are 1:1
+    assert parse_option("US.AAPL261301C10000") is None  # month 13 is not a date
+
+
+def test_short_round_trip_pnl_is_inverted_and_scaled():
+    """Sell to open, buy to close: the premium is the gain, times 100 a contract."""
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "US.TQQQ250905C90000",
+                "stock_name": "TQQQ CALL",
+                "trd_side": "SELL_SHORT",
+                "qty": 1,
+                "price": 1.5,
+                "create_time": "2025-09-03 10:00:00",
+            },
+            {
+                "code": "US.TQQQ250905C90000",
+                "stock_name": "TQQQ CALL",
+                "trd_side": "BUY_BACK",
+                "qty": 1,
+                "price": 0.4,
+                "create_time": "2025-09-04 10:00:00",
+            },
+        ]
+    )
+    t = fifo_round_trips(deals, as_of=date(2025, 9, 10))
+
+    assert len(t) == 1
+    assert t.iloc[0]["direction"] == "SHORT"
+    assert t.iloc[0]["multiplier"] == 100
+    assert t.iloc[0]["pnl"] == 110.0  # (1.5 - 0.4) * 1 * 100
+    assert t.iloc[0]["close_reason"] == "TRADE"
+
+
+def test_short_option_held_to_expiry_realises_the_premium():
+    """The 'let it expire' case: no closing fill exists, so nothing else would."""
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "US.TQQQ250905C90000",
+                "stock_name": "TQQQ CALL",
+                "trd_side": "SELL_SHORT",
+                "qty": 2,
+                "price": 1.25,
+                "create_time": "2025-09-02 10:00:00",
+            },
+        ]
+    )
+    after = fifo_round_trips(deals, as_of=date(2025, 9, 10))
+    assert len(after) == 1
+    assert after.iloc[0]["pnl"] == 250.0  # 1.25 * 2 * 100, premium kept
+    assert after.iloc[0]["close_reason"] == "EXPIRY"
+    assert after.iloc[0]["close_time"] == "2025-09-05"
+    assert open_lots(deals, as_of=date(2025, 9, 10)).empty
+
+    # Before expiry the position is still open and contributes no realised P&L.
+    before = fifo_round_trips(deals, as_of=date(2025, 9, 4))
+    assert before.empty
+    assert open_lots(deals, as_of=date(2025, 9, 4)).iloc[0]["qty"] == -2.0
+
+
+def test_closing_fill_without_a_position_is_dropped_not_flipped():
+    """An IPO allotment or ticker change leaves a sale with no matching buy.
+
+    Treating it as opening a short would invent a position that never existed.
+    """
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "HK.06666",
+                "stock_name": "IPO",
+                "trd_side": "SELL",
+                "qty": 500,
+                "price": 15.8,
+                "create_time": "2021-01-21 13:00:00",
+            },
+        ]
+    )
+    assert fifo_round_trips(deals).empty
+    assert open_lots(deals).empty
