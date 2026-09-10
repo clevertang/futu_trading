@@ -12,9 +12,11 @@ def enrich(positions: pd.DataFrame, fx: FX) -> pd.DataFrame:
         return pd.DataFrame()
     df = positions.copy()
     df["market_val_base"] = [
-        fx.to_base(mv, cur) for mv, cur in zip(df["market_val"], df["currency"])
+        fx.to_base(mv, cur) for mv, cur in zip(df["market_val"], df["currency"], strict=True)
     ]
-    df["pl_val_base"] = [fx.to_base(v, cur) for v, cur in zip(df["pl_val"], df["currency"])]
+    df["pl_val_base"] = [
+        fx.to_base(v, cur) for v, cur in zip(df["pl_val"], df["currency"], strict=True)
+    ]
     total = df["market_val_base"].dropna().sum()
     df["weight"] = df["market_val_base"] / total if total else 0.0
     return df.sort_values("market_val_base", ascending=False).reset_index(drop=True)

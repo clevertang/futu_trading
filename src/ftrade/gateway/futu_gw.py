@@ -63,7 +63,7 @@ class FutuGateway:
 
     # ---------- 生命周期 ----------
 
-    def __enter__(self) -> "FutuGateway":
+    def __enter__(self) -> FutuGateway:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -122,7 +122,7 @@ class FutuGateway:
             raise GatewayError(f"{what} 失败：{data}")
         return data
 
-    def _request(self, throttle: "_Throttle", what: str, call):
+    def _request(self, throttle: _Throttle, what: str, call):
         """限流 + 撞到频率限制时退避重试。call 返回 (ret, data) 或 (ret, data, page_key)。"""
         for attempt in range(MAX_RETRIES + 1):
             throttle.wait()

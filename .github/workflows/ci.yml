@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: nothing here writes to the repo.
+permissions:
+  contents: read
+
+# A new push to a PR makes the in-flight run obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e ".[dev]"
+
+      - name: ruff check
+        run: ruff check --output-format=github src tests
+
+      - name: ruff format --check
+        run: ruff format --check src tests
+
+  readonly-guard:
+    # This project's core safety property: no order-placing call may exist
+    # anywhere under src/. It gets its own job so it shows up as a separate
+    # check rather than hiding inside a green test matrix.
+    name: Read-only guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e ".[dev]"
+
+      - name: Assert no trading calls in source
+        run: pytest tests/test_readonly.py -v
+
+  test:
+    name: Test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: ${{ matrix.experimental || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+        include:
+          # futu-api ships as an sdist with no version metadata, so 3.13 is
+          # unproven. Report it without blocking the merge.
+          - python-version: "3.13"
+            experimental: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e ".[dev]"
+
+      - name: Test with coverage
+        run: pytest --cov=ftrade --cov-report=term-missing --cov-report=xml
+
+      - name: Re-run under varied PYTHONHASHSEED
+        # CPython salts str hashing per process. A single green run does not
+        # prove the suite is stable -- test_end_to_end failed on ~60% of seeds
+        # before the mock gateway was given a deterministic seed. Cheap
+        # insurance against reintroducing that class of flake.
+        run: |
+          for seed in 1 2 3 4 5; do
+            echo "::group::PYTHONHASHSEED=$seed"
+            PYTHONHASHSEED=$seed pytest || exit 1
+            echo "::endgroup::"
+          done
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14
+
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check metadata
+        run: twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 14

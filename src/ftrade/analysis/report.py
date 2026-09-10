@@ -19,7 +19,11 @@ def build_report(db: Database, cfg, acc_id: int | None = None) -> dict:
     dls = repo.deals(db, acc_id=acc_id)
     snaps = repo.account_snapshots(db, acc_id=acc_id)
 
-    cur_map = dict(zip(pos.get("code", []), pos.get("currency", []))) if not pos.empty else {}
+    cur_map = (
+        dict(zip(pos.get("code", []), pos.get("currency", []), strict=True))
+        if not pos.empty
+        else {}
+    )
     trips = fifo_round_trips(dls, currency_of=cur_map.get)
 
     curve = metrics.equity_curve(snaps)
@@ -28,7 +32,7 @@ def build_report(db: Database, cfg, acc_id: int | None = None) -> dict:
     lots = open_lots(dls)
     reconciliation = []
     if not lots.empty and not pos.empty:
-        broker = dict(zip(pos["code"], pos["qty"]))
+        broker = dict(zip(pos["code"], pos["qty"], strict=True))
         for _, r in lots.iterrows():
             b = float(broker.get(r["code"], 0) or 0)
             if abs(b - float(r["qty"])) > 1e-6:

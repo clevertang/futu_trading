@@ -16,3 +16,10 @@ config.yaml
 *.db
 *.sqlite3
 *.log
+
+# Build and coverage artefacts
+dist/
+build/
+.coverage
+coverage.xml
+htmlcov/
