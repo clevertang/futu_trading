@@ -55,3 +55,46 @@ def test_partial_sell_splits_across_lots():
 def test_empty_input_is_safe():
     assert fifo_round_trips(pd.DataFrame()).empty
     assert open_lots(pd.DataFrame()).empty
+
+
+def test_currency_for_code_uses_market_prefix():
+    from ftrade.analysis.fx import currency_for_code
+
+    assert currency_for_code("US.AAPL") == "USD"
+    assert currency_for_code("HK.00700") == "HKD"
+    assert currency_for_code("JP.7203") == "JPY"
+    assert currency_for_code("AAPL") is None  # no prefix, no guess
+    assert currency_for_code(None) is None
+
+
+def test_behavior_converts_currencies_before_aggregating():
+    from ftrade.analysis.fx import FX
+    from ftrade.analysis.trades import behavior
+
+    # One HKD win and one USD win of the same nominal size: with USD at 7.8 the
+    # USD trip must dominate. Summing raw pnl would call them equal.
+    trips = pd.DataFrame(
+        [
+            {
+                "code": "HK.00700",
+                "pnl": 100.0,
+                "pnl_pct": 10.0,
+                "currency": "HKD",
+                "holding_days": 5,
+            },
+            {
+                "code": "US.AAPL",
+                "pnl": 100.0,
+                "pnl_pct": 10.0,
+                "currency": "USD",
+                "holding_days": 5,
+            },
+        ]
+    )
+    fx = FX({"HKD": 1.0, "USD": 7.8}, "HKD")
+
+    raw = behavior(trips, pd.DataFrame(), fx=None)
+    converted = behavior(trips, pd.DataFrame(), fx=fx)
+
+    assert raw["realized_pnl"] == 200.0
+    assert converted["realized_pnl"] == 880.0

@@ -7,7 +7,7 @@ from datetime import datetime
 from ..storage import repo
 from ..storage.db import Database
 from . import metrics, portfolio, trades
-from .fx import FX
+from .fx import FX, currency_for_code
 from .pnl import fifo_round_trips, open_lots
 
 
@@ -24,7 +24,13 @@ def build_report(db: Database, cfg, acc_id: int | None = None) -> dict:
         if not pos.empty
         else {}
     )
-    trips = fifo_round_trips(dls, currency_of=cur_map.get)
+
+    def currency_of(code):
+        # Current holdings carry the broker's own currency; everything else --
+        # which is most of the history -- falls back to the market prefix.
+        return cur_map.get(code) or currency_for_code(code)
+
+    trips = fifo_round_trips(dls, currency_of=currency_of)
 
     curve = metrics.equity_curve(snaps)
 
@@ -58,7 +64,7 @@ def build_report(db: Database, cfg, acc_id: int | None = None) -> dict:
         "equity_curve": curve[["snap_date", "total_assets", "drawdown"]].to_dict("records")
         if not curve.empty
         else [],
-        "behavior": trades.behavior(trips, dls),
+        "behavior": trades.behavior(trips, dls, fx),
         "round_trips": trips.sort_values("close_time", ascending=False).head(50).to_dict("records")
         if not trips.empty
         else [],
