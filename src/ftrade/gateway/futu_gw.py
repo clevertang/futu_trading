@@ -219,6 +219,25 @@ class FutuGateway:
         )
         return df if df is not None else pd.DataFrame()
 
+    def get_order_fees(self, acc_id: int, order_ids: list[str]) -> pd.DataFrame:
+        """Per-order fee totals and their breakdown.
+
+        Futu returns no cost information on deals, so this is the only route to
+        commissions, platform fees and the various regulatory levies. Orders
+        that never filled simply come back absent.
+        """
+        if not order_ids:
+            return pd.DataFrame()
+        ctx = self._ctx_for(acc_id)
+        _ret, df = self._request(
+            self._th_history,
+            f"获取订单费用（{len(order_ids)} 笔）",
+            lambda: ctx.order_fee_query(
+                order_id_list=list(order_ids), trd_env=self._env(), acc_id=acc_id
+            ),
+        )
+        return df if df is not None else pd.DataFrame()
+
     def get_klines(self, code: str, start: str, end: str) -> pd.DataFrame:
         futu = _futu()
         ctx = self._quote()

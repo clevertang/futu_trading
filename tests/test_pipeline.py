@@ -141,3 +141,64 @@ def test_net_asset_weights_diverge_from_securities_weights_under_margin():
     out = net_asset_weights(holdings, net_assets=34577.06)
 
     assert out[0]["weight_of_net"] == 1.4797  # 148% of the money actually owned
+
+
+def test_fee_summary_converts_and_breaks_down():
+    import pandas as pd
+
+    from ftrade.analysis.fees import fee_summary
+    from ftrade.analysis.fx import FX
+
+    rows = pd.DataFrame(
+        [
+            {
+                "fee_amount": 3.04,
+                "currency": "USD",
+                "code": "US.TQQQ260911C75000",
+                "create_time": "2026-09-08 10:00:00",
+            },
+            {
+                "fee_amount": 2.05,
+                "currency": "USD",
+                "code": "US.TQQQ",
+                "create_time": "2026-09-08 11:00:00",
+            },
+            {
+                "fee_amount": 78.00,
+                "currency": "HKD",
+                "code": "HK.00700",
+                "create_time": "2024-05-02 10:00:00",
+            },
+        ]
+    )
+    out = fee_summary(rows, FX({"HKD": 1.0, "USD": 7.8}, "HKD").rebase("USD"))
+
+    assert out["base_currency"] == "USD"
+    assert out["total"] == 15.09  # 3.04 + 2.05 + 78/7.8
+    assert out["by_currency"] == {"HKD": 78.0, "USD": 5.09}  # raw, not converted
+    assert out["by_year"] == {"2024": 10.0, "2026": 5.09}
+    # Sorted by converted amount, so the HKD row leads once converted.
+    assert out["top_symbols"][0] == {"code": "HK.00700", "fees": 10.0}
+    # Option fees roll up to their underlying rather than to each contract:
+    # the two US rows are one contract and its underlying, and they merge.
+    assert out["top_symbols"][1] == {"code": "US.TQQQ", "fees": 5.09}
+
+
+def test_fee_summary_is_safe_when_no_fees_are_synced():
+    import pandas as pd
+
+    from ftrade.analysis.fees import fee_summary
+    from ftrade.analysis.fx import FX
+
+    out = fee_summary(pd.DataFrame(), FX({"USD": 1.0}, "USD"))
+    assert out["total"] == 0.0 and out["count"] == 0
+
+
+def test_realized_net_of_fees_is_reported_separately():
+    from ftrade.analysis.report import _with_net_of_fees
+
+    bh = _with_net_of_fees({"realized_pnl": 9806.11}, {"total": 4806.13})
+
+    assert bh["realized_pnl"] == 9806.11  # gross stays untouched
+    assert bh["fees_total"] == 4806.13
+    assert bh["realized_pnl_net"] == 4999.98

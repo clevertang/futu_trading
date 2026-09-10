@@ -57,6 +57,10 @@ class Gateway(Protocol):
         """日线：time_key, open, high, low, close, volume"""
         ...
 
+    def get_order_fees(self, acc_id: int, order_ids: list[str]) -> pd.DataFrame:
+        """order_id, fee_amount, fee_details —— 成交流水不含费用，只能按订单查。"""
+        ...
+
 
 def to_str(value: Any) -> str | None:
     """把富途的枚举/列表规范化成可入库的字符串。"""

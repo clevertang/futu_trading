@@ -203,6 +203,10 @@ class MockGateway:
             ]
         ]
 
+    def get_order_fees(self, acc_id: int, order_ids: list[str]) -> pd.DataFrame:
+        """The mock account trades for free; fees are a live-broker concern."""
+        return pd.DataFrame(columns=["order_id", "fee_amount", "fee_details"])
+
     def get_klines(self, code: str, start: str, end: str) -> pd.DataFrame:
         series = self.prices.get(code, {})
         rows = []

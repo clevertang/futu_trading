@@ -7,8 +7,24 @@ from datetime import datetime
 from ..storage import repo
 from ..storage.db import Database
 from . import corporate, equity, metrics, portfolio, trades
+from . import fees as fees_mod
 from .fx import FX, currency_for_code
 from .pnl import fifo_round_trips, open_lots
+
+
+def _with_net_of_fees(behavior: dict, fee_stats: dict) -> dict:
+    """Attach a fees-inclusive realised figure beside the gross one.
+
+    Kept as a separate field rather than folded into `realized_pnl`: the fee
+    total covers every order, including those that opened positions still held,
+    so it is a whole-account cost rather than a per-round-trip one.
+    """
+    total = fee_stats.get("total") or 0.0
+    gross = behavior.get("realized_pnl")
+    behavior["fees_total"] = round(total, 2)
+    if gross is not None:
+        behavior["realized_pnl_net"] = round(gross - total, 2)
+    return behavior
 
 
 def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None = None) -> dict:
@@ -32,6 +48,7 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
 
     trips = fifo_round_trips(dls, currency_of=currency_of)
 
+    fee_stats = fees_mod.fee_summary(repo.order_fees(db, acc_id=acc_id), fx)
     curve = metrics.equity_curve(snaps)
 
     # 本地 FIFO 推算的持仓 vs 券商返回的持仓，对不上通常意味着历史成交没拉全
@@ -78,7 +95,8 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
         "equity_curve": curve[["snap_date", "total_assets", "drawdown"]].to_dict("records")
         if not curve.empty
         else [],
-        "behavior": trades.behavior(trips, dls, fx),
+        "behavior": _with_net_of_fees(trades.behavior(trips, dls, fx), fee_stats),
+        "fees": fee_stats,
         "realized_curve": trades.realized_curve(trips, fx),
         "pnl_distribution": trades.pnl_distribution(trips),
         "round_trips": trips.sort_values("close_time", ascending=False).head(50).to_dict("records")
