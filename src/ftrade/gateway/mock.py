@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import random
+import zlib
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -23,7 +24,9 @@ UNIVERSE = [
 
 
 def _seeded(code: str) -> random.Random:
-    return random.Random(hash(code) & 0xFFFF)
+    # crc32 rather than hash(): str hashing is salted per process (PYTHONHASHSEED),
+    # which would make the mock data differ between runs.
+    return random.Random(zlib.crc32(code.encode("utf-8")))
 
 
 def _price_series(code: str, base: float, days: int) -> dict[str, float]:
