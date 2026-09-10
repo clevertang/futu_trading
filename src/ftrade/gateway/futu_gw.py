@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from typing import Any
 
 import pandas as pd
@@ -13,6 +15,30 @@ import pandas as pd
 from .base import GatewayError, to_str
 
 log = logging.getLogger(__name__)
+
+# 富途开放接口的频率限制（官方文档口径），留出余量避免踩线：
+#   历史成交 / 历史订单 / 持仓 / 资金：10 次 / 30 秒
+#   历史日线：60 次 / 30 秒
+HISTORY_MIN_INTERVAL = 3.2
+KLINE_MIN_INTERVAL = 0.55
+MAX_RETRIES = 5
+_RATE_LIMIT_HINTS = ("high frequency", "频率", "Maximum")
+
+
+class _Throttle:
+    """把同一类请求之间的间隔拉开到 min_interval 秒。"""
+
+    def __init__(self, min_interval: float):
+        self.min_interval = min_interval
+        self._lock = threading.Lock()
+        self._last = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            delay = self.min_interval - (time.monotonic() - self._last)
+            if delay > 0:
+                time.sleep(delay)
+            self._last = time.monotonic()
 
 
 def _futu():
@@ -31,6 +57,8 @@ class FutuGateway:
         self._trade_ctxs: dict[str, Any] = {}
         self._quote_ctx: Any = None
         self._acc_market: dict[int, str] = {}
+        self._th_history = _Throttle(HISTORY_MIN_INTERVAL)
+        self._th_kline = _Throttle(KLINE_MIN_INTERVAL)
 
     # ---------- 生命周期 ----------
 
@@ -91,6 +119,23 @@ class FutuGateway:
             raise GatewayError(f"{what} 失败：{data}")
         return data
 
+    def _request(self, throttle: "_Throttle", what: str, call):
+        """限流 + 撞到频率限制时退避重试。call 返回 (ret, data) 或 (ret, data, page_key)。"""
+        for attempt in range(MAX_RETRIES + 1):
+            throttle.wait()
+            result = call()
+            ret, data = result[0], result[1]
+            futu = _futu()
+            if ret == futu.RET_OK:
+                return result
+            msg = str(data)
+            if attempt >= MAX_RETRIES or not any(h in msg for h in _RATE_LIMIT_HINTS):
+                raise GatewayError(f"{what} 失败：{data}")
+            backoff = min(35.0, 5.0 * 2**attempt)
+            log.warning("%s 触发限频，%.0fs 后重试（%d/%d）", what, backoff, attempt + 1, MAX_RETRIES)
+            time.sleep(backoff)
+        raise GatewayError(f"{what} 失败：重试 {MAX_RETRIES} 次仍被限频")
+
     # ---------- 查询 ----------
 
     def get_accounts(self) -> pd.DataFrame:
@@ -124,14 +169,15 @@ class FutuGateway:
     def get_account_info(self, acc_id: int, currency: str) -> dict[str, Any]:
         futu = _futu()
         ctx = self._ctx_for(acc_id)
-        df = self._check(
-            *ctx.accinfo_query(
+        ret, df = self._request(
+            self._th_history,
+            f"获取账户 {acc_id} 资金",
+            lambda: ctx.accinfo_query(
                 trd_env=self._env(),
                 acc_id=acc_id,
                 refresh_cache=True,
                 currency=getattr(futu.Currency, currency),
             ),
-            what="获取账户资金",
         )
         if df.empty:
             return {}
@@ -139,29 +185,32 @@ class FutuGateway:
 
     def get_positions(self, acc_id: int) -> pd.DataFrame:
         ctx = self._ctx_for(acc_id)
-        df = self._check(
-            *ctx.position_list_query(trd_env=self._env(), acc_id=acc_id, refresh_cache=True),
-            what="获取持仓",
+        ret, df = self._request(
+            self._th_history,
+            "获取持仓",
+            lambda: ctx.position_list_query(trd_env=self._env(), acc_id=acc_id, refresh_cache=True),
         )
         return df if df is not None else pd.DataFrame()
 
     def get_history_deals(self, acc_id: int, start: str, end: str) -> pd.DataFrame:
         ctx = self._ctx_for(acc_id)
-        df = self._check(
-            *ctx.history_deal_list_query(
+        ret, df = self._request(
+            self._th_history,
+            f"获取历史成交 {start}~{end}",
+            lambda: ctx.history_deal_list_query(
                 start=start, end=end, trd_env=self._env(), acc_id=acc_id
             ),
-            what=f"获取历史成交 {start}~{end}",
         )
         return df if df is not None else pd.DataFrame()
 
     def get_history_orders(self, acc_id: int, start: str, end: str) -> pd.DataFrame:
         ctx = self._ctx_for(acc_id)
-        df = self._check(
-            *ctx.history_order_list_query(
+        ret, df = self._request(
+            self._th_history,
+            f"获取历史订单 {start}~{end}",
+            lambda: ctx.history_order_list_query(
                 start=start, end=end, trd_env=self._env(), acc_id=acc_id
             ),
-            what=f"获取历史订单 {start}~{end}",
         )
         return df if df is not None else pd.DataFrame()
 
@@ -171,17 +220,19 @@ class FutuGateway:
         frames: list[pd.DataFrame] = []
         page_key = None
         while True:
-            ret, data, page_key = ctx.request_history_kline(
-                code,
-                start=start,
-                end=end,
-                ktype=futu.KLType.K_DAY,
-                autype=futu.AuType.QFQ,
-                max_count=1000,
-                page_req_key=page_key,
+            _ret, data, page_key = self._request(
+                self._th_kline,
+                f"获取 {code} 日线",
+                lambda pk=page_key: ctx.request_history_kline(
+                    code,
+                    start=start,
+                    end=end,
+                    ktype=futu.KLType.K_DAY,
+                    autype=futu.AuType.QFQ,
+                    max_count=1000,
+                    page_req_key=pk,
+                ),
             )
-            if ret != futu.RET_OK:
-                raise GatewayError(f"获取 {code} 日线失败：{data}")
             frames.append(data)
             if page_key is None:
                 break

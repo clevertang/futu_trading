@@ -255,17 +255,42 @@ class SyncService:
 
     # ---------- 一键 ----------
 
+    def _syncable_accounts(self) -> list[int]:
+        """只同步与配置 trd_env 一致的账户。
+
+        富途会把模拟盘账户一并返回，但用 REAL 的上下文去查它们必然报错；
+        已销户（DISABLED）的真实账户仍要同步，历史成交是有价值的。
+        """
+        want = self.cfg.futu.trd_env
+        df = self.db.query("select acc_id, trd_env from accounts")
+        if df.empty:
+            return []
+        keep = [int(r["acc_id"]) for _, r in df.iterrows() if _text(r["trd_env"]) == want]
+        skipped = len(df) - len(keep)
+        if skipped:
+            log.info("跳过 %d 个非 %s 账户", skipped, want)
+        return keep
+
     def sync_all(self, full: bool = False, with_klines: bool = True) -> dict[str, Any]:
         stats: dict[str, Any] = {}
-        acc_ids = self.sync_accounts()
+        all_ids = self.sync_accounts()
+        acc_ids = self._syncable_accounts() or all_ids
         stats["accounts"] = len(acc_ids)
         deals = positions = orders = 0
+        failed: list[str] = []
         for acc_id in acc_ids:
-            self.sync_account_info(acc_id)
-            positions += self.sync_positions(acc_id)
-            deals += self.sync_deals(acc_id, full=full)
-            orders += self.sync_orders(acc_id, full=full)
+            # 单个账户失败不应中断整轮同步：销户账户、权限缺失的市场都会抛错。
+            try:
+                self.sync_account_info(acc_id)
+                positions += self.sync_positions(acc_id)
+                deals += self.sync_deals(acc_id, full=full)
+                orders += self.sync_orders(acc_id, full=full)
+            except Exception as exc:
+                log.warning("账户 %s 同步失败，已跳过：%s", acc_id, exc)
+                failed.append(f"{acc_id}: {exc}")
         stats.update(positions=positions, deals=deals, orders=orders)
+        if failed:
+            stats["failed"] = failed
         if with_klines:
             stats["klines"] = self.sync_klines()
         self.db.set_state("last_sync_at", _now())
