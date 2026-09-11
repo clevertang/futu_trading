@@ -264,6 +264,61 @@ class SyncService:
         log.info("账户 %s 订单费用 %d 条", acc_id, total)
         return total
 
+    def sync_cash_flows(self, acc_id: int, start: str, end: str | None = None) -> int:
+        """Walk clearing dates pulling non-trade cash movements.
+
+        Dividends, withholding tax, interest and transfers never appear in the
+        deal feed, so P&L built from deals alone omits all of them. Futu only
+        answers one clearing date at a time for this account -- a range is
+        rejected -- so this is inherently a day-by-day walk, rate limited to 20
+        requests per 30s.
+
+        Progress is checkpointed per account so an interrupted backfill resumes
+        instead of starting over, and weekends are skipped since they settle
+        nothing.
+        """
+        key = f"cashflow_last_date:{acc_id}"
+        last = self.db.get_state(key)
+        begin = date.fromisoformat(last) + timedelta(days=1) if last else date.fromisoformat(start)
+        finish = date.fromisoformat(end) if end else date.fromisoformat(_today())
+        total = 0
+        day = begin
+        while day <= finish:
+            if day.weekday() >= 5:  # settlement does not happen at weekends
+                day += timedelta(days=1)
+                continue
+            iso = day.isoformat()
+            try:
+                df = self.gw.get_cash_flow(acc_id, iso)
+            except Exception as exc:
+                log.warning(
+                    "账户 %s 资金流水 %s 失败，已中断（下次从此处续）：%s", acc_id, iso, exc
+                )
+                break
+            if df is not None and not df.empty:
+                rows = [
+                    {
+                        "cashflow_id": _text(r.get("cashflow_id")),
+                        "acc_id": acc_id,
+                        "clearing_date": _text(r.get("clearing_date")),
+                        "settlement_date": _text(r.get("settlement_date")),
+                        "currency": _text(r.get("currency")),
+                        "cashflow_type": _text(r.get("cashflow_type")),
+                        "direction": _text(r.get("cashflow_direction")),
+                        "amount": _num(r.get("cashflow_amount")),
+                        "remark": _text(r.get("cashflow_remark")),
+                        "synced_at": _now(),
+                    }
+                    for _, r in df.iterrows()
+                    if _text(r.get("cashflow_id"))
+                ]
+                total += self.db.upsert("cash_flows", rows)
+            self.db.set_state(key, iso)
+            day += timedelta(days=1)
+        if total:
+            log.info("账户 %s 资金流水 %d 条（至 %s）", acc_id, total, self.db.get_state(key))
+        return total
+
     # ---------- 行情 ----------
 
     def sync_klines(self, codes: list[str] | None = None) -> int:
@@ -315,12 +370,14 @@ class SyncService:
             log.info("跳过 %d 个非 %s 账户", skipped, want)
         return keep
 
-    def sync_all(self, full: bool = False, with_klines: bool = True) -> dict[str, Any]:
+    def sync_all(
+        self, full: bool = False, with_klines: bool = True, with_cash_flow: bool = False
+    ) -> dict[str, Any]:
         stats: dict[str, Any] = {}
         all_ids = self.sync_accounts()
         acc_ids = self._syncable_accounts() or all_ids
         stats["accounts"] = len(acc_ids)
-        deals = positions = orders = fees = 0
+        deals = positions = orders = fees = cash = 0
         failed: list[str] = []
         for acc_id in acc_ids:
             # 单个账户失败不应中断整轮同步：销户账户、权限缺失的市场都会抛错。
@@ -330,10 +387,21 @@ class SyncService:
                 deals += self.sync_deals(acc_id, full=full)
                 orders += self.sync_orders(acc_id, full=full)
                 fees += self.sync_order_fees(acc_id)
+                if with_cash_flow:
+                    # Bounded by the account's own trading history: a closed
+                    # account settles nothing after its last deal.
+                    first = self.db.scalar(
+                        "SELECT MIN(create_time) FROM deals WHERE acc_id = ?", [acc_id]
+                    )
+                    cash += self.sync_cash_flows(
+                        acc_id, str(first)[:10] if first else self.cfg.sync.deals_start
+                    )
             except Exception as exc:
                 log.warning("账户 %s 同步失败，已跳过：%s", acc_id, exc)
                 failed.append(f"{acc_id}: {exc}")
-        stats.update(positions=positions, deals=deals, orders=orders, order_fees=fees)
+        stats.update(
+            positions=positions, deals=deals, orders=orders, order_fees=fees, cash_flows=cash
+        )
         if failed:
             stats["failed"] = failed
         if with_klines:

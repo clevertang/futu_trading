@@ -203,6 +203,10 @@ class MockGateway:
             ]
         ]
 
+    def get_cash_flow(self, acc_id: int, clearing_date: str) -> pd.DataFrame:
+        """The mock account pays no dividends and borrows nothing."""
+        return pd.DataFrame()
+
     def get_order_fees(self, acc_id: int, order_ids: list[str]) -> pd.DataFrame:
         """The mock account trades for free; fees are a live-broker concern."""
         return pd.DataFrame(columns=["order_id", "fee_amount", "fee_details"])

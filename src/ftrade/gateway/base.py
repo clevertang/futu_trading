@@ -57,6 +57,10 @@ class Gateway(Protocol):
         """日线：time_key, open, high, low, close, volume"""
         ...
 
+    def get_cash_flow(self, acc_id: int, clearing_date: str) -> pd.DataFrame:
+        """cashflow_id, cashflow_type, cashflow_direction, cashflow_amount —— 非交易资金流水。"""
+        ...
+
     def get_order_fees(self, acc_id: int, order_ids: list[str]) -> pd.DataFrame:
         """order_id, fee_amount, fee_details —— 成交流水不含费用，只能按订单查。"""
         ...
