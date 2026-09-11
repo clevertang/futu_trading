@@ -21,6 +21,7 @@ from .instruments import parse_option
 
 RENAME = "rename"
 SPLIT = "split"
+WRITEOFF = "writeoff"
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,19 @@ def _split_option_code(code: str, ratio: float) -> str | None:
     return f"{body}{parsed['kind'][0]}{thousandths}"
 
 
+def _writeoff_row(template: pd.Series, code: str, qty: float, when: str, long: bool) -> dict:
+    row = {c: template.get(c) for c in template.index}
+    row.update(
+        code=code,
+        qty=abs(qty),
+        price=0.0,
+        trd_side="SELL" if long else "BUY_BACK",
+        create_time=f"{when} 00:00:00",
+        deal_id=f"writeoff:{code}:{when}",
+    )
+    return row
+
+
 def apply_actions(deals: pd.DataFrame, actions: list[Action]) -> pd.DataFrame:
     """Restate deals that predate each action in post-action terms."""
     if deals is None or deals.empty or not actions:
@@ -93,6 +107,23 @@ def apply_actions(deals: pd.DataFrame, actions: list[Action]) -> pd.DataFrame:
                 df.at[idx, "code"] = new_code
                 df.at[idx, "qty"] = float(df.at[idx, "qty"] or 0) * act.ratio
                 df.at[idx, "price"] = float(df.at[idx, "price"] or 0) / act.ratio
+
+    # Write-offs are appended rather than rewritten: a delisting closes the
+    # position at zero, and there is no earlier deal to restate.
+    for act in actions:
+        if act.type != WRITEOFF or not act.code or not act.date:
+            continue
+        prior = df[(df["code"] == act.code) & (df["create_time"].astype(str).str[:10] <= act.date)]
+        if prior.empty:
+            continue
+        signed = sum(
+            float(r["qty"] or 0) * (1 if str(r["trd_side"]).upper().startswith("BUY") else -1)
+            for _, r in prior.iterrows()
+        )
+        if abs(signed) <= 1e-9:
+            continue
+        row = _writeoff_row(prior.iloc[-1], act.code, signed, act.date, signed > 0)
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
 
     return df
 

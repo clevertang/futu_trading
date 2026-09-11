@@ -41,13 +41,18 @@ analysis:
   # 「没买过却卖出」「买了永不平仓」这类无法配对的残留。
   #   rename —— 改名 / SPAC 合并 / 换代码；date 之前的成交改写为新代码
   #   split  —— 拆股；date 之前的成交数量 ×ratio、价格 ÷ratio，
-  #             同时把该标的的期权合约按同一比例重新定价（行权价 ÷ratio）
+  #             同时把该标的的期权合约按同一比例重新定价（行权价 ÷ratio）。
+  #             合股用小于 1 的 ratio，例如 10 股并 1 股写 ratio: 0.1
+  #   writeoff —— 退市清零；按 date 当天的剩余持仓合成一笔 0 价平仓，
+  #             亏损全额计入已实现。金额与 date 无关，date 只影响平仓日期
   corporate_actions: []
   # 示例（请按自己的账户填写，并核对生效日）：
   # corporate_actions:
   #   - {type: rename, from: US.CLA,  to: US.OUST, date: "2021-03-12"}
   #   - {type: rename, from: US.TRXC, to: US.ASXC, date: "2021-04-01"}
   #   - {type: split,  code: US.TQQQ, ratio: 2,    date: "2025-11-18"}
+  #   - {type: split,  code: US.QTT,   ratio: 0.1,  date: "2022-06-01"}
+  #   - {type: writeoff, code: US.QTT,              date: "2023-01-01"}
 
 web:
   host: 127.0.0.1
