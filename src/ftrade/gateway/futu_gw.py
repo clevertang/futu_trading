@@ -22,6 +22,8 @@ log = logging.getLogger(__name__)
 #   历史日线：60 次 / 30 秒
 HISTORY_MIN_INTERVAL = 3.2
 KLINE_MIN_INTERVAL = 0.55
+# Cash flow allows 20 requests per 30s -- twice the history endpoints.
+CASHFLOW_MIN_INTERVAL = 1.6
 MAX_RETRIES = 5
 _RATE_LIMIT_HINTS = ("high frequency", "频率", "Maximum")
 
@@ -60,6 +62,7 @@ class FutuGateway:
         self._acc_market: dict[int, str] = {}
         self._th_history = _Throttle(HISTORY_MIN_INTERVAL)
         self._th_kline = _Throttle(KLINE_MIN_INTERVAL)
+        self._th_cashflow = _Throttle(CASHFLOW_MIN_INTERVAL)
 
     # ---------- 生命周期 ----------
 
@@ -234,6 +237,23 @@ class FutuGateway:
             f"获取订单费用（{len(order_ids)} 笔）",
             lambda: ctx.order_fee_query(
                 order_id_list=list(order_ids), trd_env=self._env(), acc_id=acc_id
+            ),
+        )
+        return df if df is not None else pd.DataFrame()
+
+    def get_cash_flow(self, acc_id: int, clearing_date: str) -> pd.DataFrame:
+        """Non-trade cash movements for one clearing date.
+
+        Dividends, withholding tax, interest and transfers never appear in the
+        deal feed. This account only supports querying a single clearing date
+        at a time -- passing a range is rejected -- so callers walk day by day.
+        """
+        ctx = self._ctx_for(acc_id)
+        _ret, df = self._request(
+            self._th_cashflow,
+            f"获取资金流水 {clearing_date}",
+            lambda: ctx.get_acc_cash_flow(
+                clearing_date=clearing_date, trd_env=self._env(), acc_id=acc_id
             ),
         )
         return df if df is not None else pd.DataFrame()

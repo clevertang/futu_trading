@@ -117,3 +117,20 @@ CREATE TABLE IF NOT EXISTS order_fees (
     synced_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_order_fees_acc ON order_fees(acc_id);
+
+-- Cash movements that are not trades: dividends, withholding tax, interest,
+-- deposits and withdrawals. None of these appear in the deal feed, so realised
+-- P&L computed from deals alone silently omits every one of them.
+CREATE TABLE IF NOT EXISTS cash_flows (
+    cashflow_id     TEXT PRIMARY KEY,
+    acc_id          INTEGER,
+    clearing_date   TEXT,
+    settlement_date TEXT,
+    currency        TEXT,
+    cashflow_type   TEXT,
+    direction       TEXT,
+    amount          REAL,
+    remark          TEXT,
+    synced_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cash_flows_acc_date ON cash_flows(acc_id, clearing_date);
