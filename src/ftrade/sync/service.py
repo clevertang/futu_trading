@@ -222,6 +222,48 @@ class SyncService:
         self.db.set_state(key, end)
         return total
 
+    def sync_order_fees(self, acc_id: int, batch: int = 300) -> int:
+        """Fetch fees for orders that do not have them yet.
+
+        Fees only exist per order, and only for orders that actually filled, so
+        this walks the local orders table rather than a date window. Already
+        fetched orders are skipped, which makes repeated runs cheap.
+        """
+        df = self.db.query(
+            "SELECT o.order_id FROM orders o "
+            "LEFT JOIN order_fees f ON f.order_id = o.order_id "
+            "WHERE o.acc_id = ? AND f.order_id IS NULL",
+            [acc_id],
+        )
+        if df.empty:
+            return 0
+        ids = [str(i) for i in df["order_id"].tolist()]
+        total = 0
+        for i in range(0, len(ids), batch):
+            chunk = ids[i : i + batch]
+            try:
+                fees = self.gw.get_order_fees(acc_id, chunk)
+            except Exception as exc:
+                log.warning("账户 %s 订单费用查询失败：%s", acc_id, exc)
+                break
+            if fees is None or fees.empty:
+                continue
+            rows = [
+                {
+                    "order_id": _text(r.get("order_id")),
+                    "acc_id": acc_id,
+                    "fee_amount": _num(r.get("fee_amount")),
+                    "currency": None,
+                    "details": _text(r.get("fee_details")),
+                    "synced_at": _now(),
+                }
+                for _, r in fees.iterrows()
+                if _text(r.get("order_id"))
+            ]
+            total += self.db.upsert("order_fees", rows)
+        log.info("账户 %s 订单费用 %d 条", acc_id, total)
+        return total
+
     # ---------- 行情 ----------
 
     def sync_klines(self, codes: list[str] | None = None) -> int:
@@ -278,7 +320,7 @@ class SyncService:
         all_ids = self.sync_accounts()
         acc_ids = self._syncable_accounts() or all_ids
         stats["accounts"] = len(acc_ids)
-        deals = positions = orders = 0
+        deals = positions = orders = fees = 0
         failed: list[str] = []
         for acc_id in acc_ids:
             # 单个账户失败不应中断整轮同步：销户账户、权限缺失的市场都会抛错。
@@ -287,10 +329,11 @@ class SyncService:
                 positions += self.sync_positions(acc_id)
                 deals += self.sync_deals(acc_id, full=full)
                 orders += self.sync_orders(acc_id, full=full)
+                fees += self.sync_order_fees(acc_id)
             except Exception as exc:
                 log.warning("账户 %s 同步失败，已跳过：%s", acc_id, exc)
                 failed.append(f"{acc_id}: {exc}")
-        stats.update(positions=positions, deals=deals, orders=orders)
+        stats.update(positions=positions, deals=deals, orders=orders, order_fees=fees)
         if failed:
             stats["failed"] = failed
         if with_klines:

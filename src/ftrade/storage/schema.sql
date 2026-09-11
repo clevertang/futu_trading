@@ -105,3 +105,15 @@ CREATE TABLE IF NOT EXISTS sync_state (
     value      TEXT,
     updated_at TEXT
 );
+
+-- Trading fees, keyed by order. Futu's deal feed carries no cost data at all,
+-- so realised P&L is gross until these are joined back in.
+CREATE TABLE IF NOT EXISTS order_fees (
+    order_id   TEXT PRIMARY KEY,
+    acc_id     INTEGER,
+    fee_amount REAL,
+    currency   TEXT,
+    details    TEXT,
+    synced_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_order_fees_acc ON order_fees(acc_id);

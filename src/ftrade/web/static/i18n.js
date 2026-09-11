@@ -11,6 +11,10 @@ window.I18N = {
     cRisk: "Risk level", cBuyingPower: "Buying power",
     ofNet: "% of net", leveraged: "margin",
     exposureNote: "Securities are {n} of net assets, so a position's share of net assets is the one that describes risk.",
+    realizedNet: "Realized, net of fees", feesSub: "{n} in fees",
+    fees: "Trading costs", feesHint: "Commissions, platform and regulatory fees, per order",
+    cYear: "Year", cFees: "Fees", cSymbolFees: "By underlying",
+    feesNote: "Realized P&L from deals alone is gross -- Futu returns no cost data on fills. Fees cover every order, including those opening positions still held.",
     snapshot: "Snapshot", syncedAt: "Synced", base: "Base", dealRange: "Deals",
     loading: "Loading…", loadFailed: "Failed to load: ", noData: "No data",
 
@@ -69,6 +73,10 @@ window.I18N = {
     cRisk: "风险等级", cBuyingPower: "购买力",
     ofNet: "占净资产", leveraged: "融资",
     exposureNote: "证券市值为净资产的 {n}，因此「占净资产」才是描述风险的口径。",
+    realizedNet: "已实现（税费后）", feesSub: "已扣除 {n} 费用",
+    fees: "交易成本", feesHint: "佣金、平台费与各类监管规费，按订单查询",
+    cYear: "年份", cFees: "费用", cSymbolFees: "按标的",
+    feesNote: "仅凭成交流水算出的已实现盈亏是税费前的——富途成交接口不返回费用。此处费用覆盖全部订单，含仍持有仓位的开仓单。",
     snapshot: "快照", syncedAt: "同步于", base: "本位币", dealRange: "成交区间",
     loading: "加载中…", loadFailed: "加载失败：", noData: "暂无数据",
 
@@ -125,6 +133,10 @@ window.I18N = {
     cRisk: "リスク水準", cBuyingPower: "買付余力",
     ofNet: "純資産比", leveraged: "信用",
     exposureNote: "証券評価額は純資産の {n} です。リスクを表すのは純資産比の方です。",
+    realizedNet: "実現損益（費用控除後）", feesSub: "費用 {n} 控除済み",
+    fees: "取引コスト", feesHint: "手数料・プラットフォーム利用料・各種規制費用（注文単位）",
+    cYear: "年", cFees: "費用", cSymbolFees: "原資産別",
+    feesNote: "約定履歴のみから算出した実現損益は費用控除前です。富途の約定APIは費用を返しません。ここでの費用は保有中のポジションを建てた注文も含む全注文が対象です。",
     snapshot: "スナップショット", syncedAt: "同期", base: "基準通貨", dealRange: "約定期間",
     loading: "読み込み中…", loadFailed: "読み込み失敗: ", noData: "データなし",
 

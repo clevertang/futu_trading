@@ -79,3 +79,17 @@ def held_codes(db: Database) -> list[str]:
         "SELECT DISTINCT code FROM position_snapshots UNION SELECT DISTINCT code FROM deals"
     )
     return sorted(c for c in df["code"].dropna().tolist() if c)
+
+
+def order_fees(db: Database, acc_id: int | None = None) -> pd.DataFrame:
+    """Fees joined onto their orders, so currency and date come along."""
+    sql = (
+        "SELECT f.order_id, f.acc_id, f.fee_amount, f.details, "
+        "o.code, o.currency, o.create_time "
+        "FROM order_fees f LEFT JOIN orders o ON o.order_id = f.order_id"
+    )
+    params: list = []
+    if acc_id is not None:
+        sql += " WHERE f.acc_id = ?"
+        params.append(acc_id)
+    return db.query(sql, params)
