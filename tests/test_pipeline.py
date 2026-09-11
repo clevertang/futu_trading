@@ -202,3 +202,90 @@ def test_realized_net_of_fees_is_reported_separately():
     assert bh["realized_pnl"] == 9806.11  # gross stays untouched
     assert bh["fees_total"] == 4806.13
     assert bh["realized_pnl_net"] == 4999.98
+
+
+def test_symbol_pnl_adds_open_positions_to_realized():
+    from ftrade.analysis.report import _merge_unrealized
+
+    by_code = [
+        {"code": "US.TQQQ", "pnl": 17480.53},
+        {"code": "US.NVDA", "pnl": 10010.83},
+    ]
+    holdings = [
+        {"code": "US.TQQQ", "pl_val_base": -6207.13},
+        # An option's open P&L belongs to the stock it is written on.
+        {"code": "US.TQQQ260911C75000", "pl_val_base": 294.00},
+        # Held but never closed, so it has no realised row at all.
+        {"code": "US.PDD", "pl_val_base": 500.0},
+    ]
+    out = {r["code"]: r for r in _merge_unrealized(by_code, holdings)}
+
+    assert out["US.TQQQ"]["unrealized"] == -5913.13
+    assert out["US.TQQQ"]["total"] == 11567.40
+    assert out["US.NVDA"]["unrealized"] == 0.0  # nothing open
+    assert out["US.PDD"] == {
+        "code": "US.PDD",
+        "pnl": 0.0,
+        "unrealized": 500.0,
+        "dividends": 0.0,
+        "total": 500.0,
+    }
+    # Ranked by the combined figure, not by realised alone.
+    assert [r["code"] for r in _merge_unrealized(by_code, holdings)][0] == "US.TQQQ"
+
+
+def test_symbol_pnl_includes_dividends():
+    """Futu's per-symbol figure is trade P&L minus fees plus dividends."""
+    from ftrade.analysis.report import _merge_unrealized
+
+    out = {
+        r["code"]: r
+        for r in _merge_unrealized(
+            [{"code": "US.TQQQ", "pnl": 17480.53}],
+            [{"code": "US.TQQQ", "pl_val_base": -6207.13}],
+            {"US.TQQQ": 245.95, "US.KO": 30.0},
+        )
+    }
+    assert out["US.TQQQ"]["dividends"] == 245.95
+    assert out["US.TQQQ"]["total"] == round(17480.53 - 6207.13 + 245.95, 2)
+    # A name only ever held for its dividend still gets a row.
+    assert out["US.KO"]["total"] == 30.0
+
+
+def test_cash_flow_direction_and_ticker_parsing():
+    import pandas as pd
+
+    from ftrade.analysis.cash import cash_summary, dividends_by_symbol, ticker_from_remark
+    from ftrade.analysis.fx import FX
+
+    assert ticker_from_remark("TQQQ 680.00000000 SHARES DIVIDENDS 0.17 USD PER SHARE") == "TQQQ"
+    assert ticker_from_remark("") is None
+
+    flows = pd.DataFrame(
+        [
+            {
+                "cashflow_type": "Cash Dividend",
+                "direction": "IN",
+                "amount": 116.44,
+                "currency": "USD",
+                "clearing_date": "2026-06-30",
+                "remark": "TQQQ 680.00000000 SHARES DIVIDENDS",
+            },
+            {
+                "cashflow_type": "Dividend Tax",
+                "direction": "OUT",
+                "amount": 11.64,
+                "currency": "USD",
+                "clearing_date": "2026-06-30",
+                "remark": "TQQQ 680.00000000 SHARES WITHHOLDING TAX",
+            },
+        ]
+    )
+    fx = FX({"USD": 1.0}, "USD")
+
+    # An OUT row reported as a positive magnitude must still subtract.
+    assert dividends_by_symbol(flows, fx, {"US.TQQQ"}) == {"US.TQQQ": 104.80}
+    summary = cash_summary(flows, fx)
+    assert summary["dividends"] == 116.44
+    assert summary["dividend_tax"] == -11.64
+    assert summary["total"] == 104.80

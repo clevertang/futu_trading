@@ -93,3 +93,12 @@ def order_fees(db: Database, acc_id: int | None = None) -> pd.DataFrame:
         sql += " WHERE f.acc_id = ?"
         params.append(acc_id)
     return db.query(sql, params)
+
+
+def cash_flows(db: Database, acc_id: int | None = None) -> pd.DataFrame:
+    sql = "SELECT * FROM cash_flows"
+    params: list = []
+    if acc_id is not None:
+        sql += " WHERE acc_id = ?"
+        params.append(acc_id)
+    return db.query(sql + " ORDER BY clearing_date", params)

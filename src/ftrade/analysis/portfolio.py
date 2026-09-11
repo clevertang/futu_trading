@@ -76,6 +76,9 @@ def summary(positions: pd.DataFrame, fx: FX, warn_threshold: float = 0.25) -> di
                 else round(float(r["market_val_base"]), 2),
                 "weight": None if pd.isna(r["weight"]) else round(float(r["weight"]), 4),
                 "pl_val": r["pl_val"],
+                "pl_val_base": None
+                if pd.isna(r["pl_val_base"])
+                else round(float(r["pl_val_base"]), 2),
                 "pl_ratio": r["pl_ratio"],
             }
             for _, r in df.iterrows()

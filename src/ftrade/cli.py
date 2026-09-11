@@ -53,7 +53,11 @@ def cmd_init(args, cfg) -> int:
 
 def cmd_sync(args, cfg) -> int:
     with _db(cfg) as db, build_gateway(cfg, args.source) as gw:
-        stats = SyncService(db, gw, cfg).sync_all(full=args.full, with_klines=not args.no_klines)
+        stats = SyncService(db, gw, cfg).sync_all(
+            full=args.full,
+            with_klines=not args.no_klines,
+            with_cash_flow=args.cash_flow,
+        )
     console.print("[green]同步完成：", stats)
     return 0
 
@@ -231,6 +235,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--full", action="store_true", help="忽略断点，全量重拉历史")
     s.add_argument("--no-klines", action="store_true", help="跳过日线同步")
     s.add_argument("--source", choices=["futu", "mock"], default="futu", help="数据源")
+    s.add_argument(
+        "--cash-flow",
+        action="store_true",
+        help="同步分红/利息/出入金（按清算日逐日拉取，首次回补较慢，可中断续传）",
+    )
     s.set_defaults(func=cmd_sync)
 
     sub.add_parser("positions", help="查看当前持仓").set_defaults(func=cmd_positions)
