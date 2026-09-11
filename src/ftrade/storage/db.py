@@ -16,9 +16,20 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, detect_types=sqlite3.PARSE_DECLTYPES)
+    conn = sqlite3.connect(path, detect_types=sqlite3.PARSE_DECLTYPES, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL lets readers proceed without contending with a writer's transaction.
+    # The default rollback-journal mode does not: a long-running writer (e.g.
+    # a multi-hour cash-flow backfill) held open at the same moment another
+    # process opens a connection and runs migrate()'s executescript (DDL,
+    # which takes a schema lock) produced real corruption on this project's
+    # own database once. WAL is the standard fix for exactly this pattern.
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    # Wait instead of raising "database is locked" for the (now much rarer)
+    # remaining contention window, e.g. two writers racing a checkpoint.
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 
