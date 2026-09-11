@@ -101,26 +101,47 @@ def realized_curve(trips: pd.DataFrame, fx) -> list[dict]:
     ]
 
 
-def pnl_distribution(trips: pd.DataFrame, bucket_pct: float = 10.0) -> list[dict]:
-    """Round trips bucketed by return percentage, for a histogram.
+def pnl_distribution(trips: pd.DataFrame, bucket_pct: float = 20.0) -> list[dict]:
+    """Round trips bucketed by return percentage, split by how they closed.
 
-    Buckets are scale-free (percent, not currency) so a 200-share trade and a
+    Buckets are scale-free (percent, not currency) so a 200-share and a
     20,000-share trade land in the same place when the outcome was the same.
+
+    The split matters more than it looks. A short option carried to expiry
+    returns exactly 100% of its premium *by construction* -- there is no
+    distribution to observe. Here that is 521 of 1,439 trips, and lumping them
+    in with traded closes buries every other shape under one bar. Keeping the
+    counts separate lets the pile be read as what it is rather than as an
+    artefact.
     """
     if trips is None or trips.empty or "pnl_pct" not in trips:
         return []
-    pct = pd.to_numeric(trips["pnl_pct"], errors="coerce").dropna()
-    if pct.empty:
+    df = trips.copy()
+    df["pnl_pct"] = pd.to_numeric(df["pnl_pct"], errors="coerce")
+    df = df[df["pnl_pct"].notna()]
+    if df.empty:
         return []
-    # Clamp the tails: a handful of -100% option expiries would otherwise
-    # flatten every other bucket into invisibility.
-    lo, hi = -50.0, 50.0
-    clamped = pct.clip(lo, hi)
-    edges = [lo + i * bucket_pct for i in range(int((hi - lo) / bucket_pct) + 1)]
+
+    # Clamp at the full loss / full premium boundaries rather than halfway, so
+    # +100% gets an honestly labelled bucket instead of sharing one with +40%.
+    lo, hi = -100.0, 100.0
+    df["clamped"] = df["pnl_pct"].clip(lo, hi)
+    reason = df.get("close_reason", pd.Series("TRADE", index=df.index)).fillna("TRADE")
+
+    steps = int(round((hi - lo) / bucket_pct))
     out = []
-    for i in range(len(edges) - 1):
-        left, right = edges[i], edges[i + 1]
-        last = i == len(edges) - 2
-        hit = (clamped >= left) & (clamped <= right if last else clamped < right)
-        out.append({"left": left, "right": right, "count": int(hit.sum())})
+    for i in range(steps):
+        left = lo + i * bucket_pct
+        right = left + bucket_pct
+        last = i == steps - 1
+        hit = (df["clamped"] >= left) & (df["clamped"] <= right if last else df["clamped"] < right)
+        out.append(
+            {
+                "left": left,
+                "right": right,
+                "count": int(hit.sum()),
+                "expiry": int((hit & (reason == "EXPIRY")).sum()),
+                "trade": int((hit & (reason != "EXPIRY")).sum()),
+            }
+        )
     return out
