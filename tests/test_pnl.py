@@ -122,15 +122,25 @@ def test_realized_curve_is_cumulative_and_sorted():
     assert curve[1]["cum_pnl"] == 140.0
 
 
-def test_pnl_distribution_buckets_and_clamps_tails():
+def test_pnl_distribution_clamps_tails_and_splits_by_close_reason():
     from ftrade.analysis.trades import pnl_distribution
 
-    trips = pd.DataFrame({"pnl_pct": [-95.0, -5.0, 3.0, 12.0, 240.0]})
-    buckets = pnl_distribution(trips, bucket_pct=10.0)
+    trips = pd.DataFrame(
+        {
+            "pnl_pct": [-891.3, -5.0, 3.0, 12.0, 100.0, 100.0, 575.7],
+            "close_reason": ["TRADE", "TRADE", "TRADE", "TRADE", "EXPIRY", "EXPIRY", "TRADE"],
+        }
+    )
+    buckets = pnl_distribution(trips, bucket_pct=20.0)
 
-    assert sum(b["count"] for b in buckets) == 5  # nothing silently dropped
-    assert buckets[0]["left"] == -50.0 and buckets[0]["count"] == 1  # -95% clamped in
-    assert buckets[-1]["right"] == 50.0 and buckets[-1]["count"] == 1  # +240% clamped in
+    assert sum(b["count"] for b in buckets) == 7  # nothing silently dropped
+    assert buckets[0]["left"] == -100.0 and buckets[0]["count"] == 1  # -891% clamped in
+    # A short held to expiry is +100% by construction; it must not be mistaken
+    # for an unusually good trade, so the counts stay separate.
+    top = buckets[-1]
+    assert top["right"] == 100.0
+    assert top["expiry"] == 2 and top["trade"] == 1  # +575.7% clamps in beside them
+    assert all(b["trade"] + b["expiry"] == b["count"] for b in buckets)
 
 
 def test_fx_rebase_converts_between_bases():
