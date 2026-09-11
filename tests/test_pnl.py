@@ -397,3 +397,78 @@ def test_writeoff_does_nothing_when_the_position_is_already_flat():
     )
     out = apply_actions(deals, [Action(type="writeoff", date="2023-01-01", code="US.QTT")])
     assert len(out) == len(deals)  # no synthetic row appended
+
+
+def test_underlying_rollup_puts_options_under_their_stock():
+    from ftrade.analysis.instruments import market_of, underlying_of
+
+    # US option roots match the ticker, so they merge without help.
+    assert underlying_of("US.TQQQ260911C75000") == "US.TQQQ"
+    assert underlying_of("US.TQQQ") == "US.TQQQ"
+    # HKEX gives derivatives their own root: Tencent trades as 00700, its
+    # options are struck on TCH. Without the map they would never join up.
+    assert underlying_of("HK.TCH240627C370000") == "HK.00700"
+    assert underlying_of("HK.00700") == "HK.00700"
+    assert market_of("HK.TCH240627C370000") == "HK"
+    assert market_of("TQQQ") is None  # unprefixed, no guess
+
+
+def test_realized_by_code_groups_a_name_traded_through_options():
+    from ftrade.analysis.trades import behavior
+
+    # One name traded as stock and through two contracts must rank as one row,
+    # otherwise a symbol traded through hundreds of weeklies never appears.
+    trips = pd.DataFrame(
+        [
+            {"code": "US.TQQQ", "pnl": 100.0, "pnl_pct": 5.0, "currency": "USD", "holding_days": 3},
+            {
+                "code": "US.TQQQ260911C75000",
+                "pnl": 150.0,
+                "pnl_pct": 100.0,
+                "currency": "USD",
+                "holding_days": 5,
+            },
+            {
+                "code": "US.TQQQ260918C78000",
+                "pnl": 250.0,
+                "pnl_pct": 100.0,
+                "currency": "USD",
+                "holding_days": 5,
+            },
+            {"code": "US.PDD", "pnl": 400.0, "pnl_pct": 9.0, "currency": "USD", "holding_days": 20},
+        ]
+    )
+    out = behavior(trips, pd.DataFrame())
+
+    by_code = {r["code"]: r["pnl"] for r in out["realized_by_code"]}
+    assert by_code == {"US.TQQQ": 500.0, "US.PDD": 400.0}
+    assert out["realized_by_code"][0]["code"] == "US.TQQQ"  # ranked by the total
+
+
+def test_realized_by_market_counts_stock_and_options_together():
+    from ftrade.analysis.trades import behavior
+
+    trips = pd.DataFrame(
+        [
+            {
+                "code": "US.TQQQ",
+                "pnl": -300.0,
+                "pnl_pct": -5.0,
+                "currency": "USD",
+                "holding_days": 3,
+            },
+            {
+                "code": "US.TQQQ260911C75000",
+                "pnl": 500.0,
+                "pnl_pct": 100.0,
+                "currency": "USD",
+                "holding_days": 5,
+            },
+            {"code": "HK.00700", "pnl": 80.0, "pnl_pct": 4.0, "currency": "HKD", "holding_days": 9},
+        ]
+    )
+    markets = {r["market"]: r for r in behavior(trips, pd.DataFrame())["realized_by_market"]}
+
+    assert markets["US"]["pnl"] == 200.0  # a covered call and its shares net out
+    assert markets["US"]["trips"] == 2
+    assert markets["HK"]["pnl"] == 80.0
