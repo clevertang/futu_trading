@@ -26,6 +26,18 @@ _US_OPTION_MULTIPLIER = 100
 _HK_OPTION_MULTIPLIER_DEFAULT = 100
 HK_CONTRACT_SIZE: dict[str, int] = {}
 
+# HKEX gives its derivatives their own root codes, unrelated to the stock's
+# number -- Tencent trades as 00700 but its options are struck on TCH. US roots
+# match the ticker, so they merge without help. Without this map an HK option's
+# P&L never joins its underlying's. Override or extend as needed; a wrong entry
+# would merge two unrelated names, so only well-known roots are listed.
+HK_OPTION_ROOT: dict[str, str] = {
+    "HK.TCH": "HK.00700",  # Tencent
+    "HK.MET": "HK.03690",  # Meituan
+    "HK.MIU": "HK.01810",  # Xiaomi
+    "HK.KST": "HK.01024",  # Kuaishou
+}
+
 
 def parse_option(code: str | None) -> dict | None:
     """Return the parts of an option symbol, or None if it is not one."""
@@ -69,3 +81,23 @@ def contract_multiplier(code: str | None) -> int:
     if parsed["market"] == "HK":
         return HK_CONTRACT_SIZE.get(parsed["underlying"], _HK_OPTION_MULTIPLIER_DEFAULT)
     return 1
+
+
+def underlying_of(code: str | None) -> str:
+    """The tradable a code belongs to: an option's underlying, or the code itself.
+
+    Used to group P&L, fees and turnover by name rather than by contract --
+    otherwise a symbol traded through hundreds of weekly options is scattered
+    across hundreds of rows and never appears in any ranking.
+    """
+    parsed = parse_option(code)
+    if not parsed:
+        return str(code or "")
+    root = parsed["underlying"]
+    return HK_OPTION_ROOT.get(root, root)
+
+
+def market_of(code: str | None) -> str | None:
+    """Market prefix of a Futu symbol: US, HK, JP ..."""
+    text = str(code or "")
+    return text.split(".", 1)[0].upper() if "." in text else None

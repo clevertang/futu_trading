@@ -10,12 +10,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .fx import FX
-from .instruments import parse_option
-
-
-def _underlying(code: str | None) -> str:
-    parsed = parse_option(code)
-    return parsed["underlying"] if parsed else str(code or "")
+from .instruments import underlying_of
 
 
 def fee_summary(fees: pd.DataFrame, fx: FX) -> dict:
@@ -32,7 +27,7 @@ def fee_summary(fees: pd.DataFrame, fx: FX) -> dict:
 
     by_year = df.groupby("year")["base"].sum().sort_index()
     by_symbol = (
-        df.assign(u=df.get("code").map(_underlying))
+        df.assign(u=df.get("code").map(underlying_of))
         .groupby("u")["base"]
         .sum()
         .sort_values(ascending=False)

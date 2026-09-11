@@ -4,6 +4,29 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .instruments import market_of, underlying_of
+
+
+def _by_market(trips: pd.DataFrame) -> list[dict]:
+    """Realised P&L per market, counting stock and options together.
+
+    A covered call and the shares it is written against are one position taken
+    in one market; separating them would report two halves of the same trade.
+    """
+    if trips is None or trips.empty:
+        return []
+    t = trips.copy()
+    t["_market"] = t["code"].map(market_of)
+    t = t[t["_market"].notna()]
+    if t.empty:
+        return []
+    grouped = t.groupby("_market")["pnl"].agg(["size", "sum"])
+    rows = [
+        {"market": str(market), "trips": int(r["size"]), "pnl": round(float(r["sum"]), 2)}
+        for market, r in grouped.iterrows()
+    ]
+    return sorted(rows, key=lambda r: r["pnl"], reverse=True)
+
 
 def behavior(trips: pd.DataFrame, deals: pd.DataFrame, fx=None) -> dict:
     """Trading-behaviour statistics.
@@ -29,7 +52,8 @@ def behavior(trips: pd.DataFrame, deals: pd.DataFrame, fx=None) -> dict:
             k: round(float(v), 2) for k, v in d.groupby("month")["turnover"].sum().items()
         }
         out["most_traded"] = [
-            {"code": k, "deals": int(v)} for k, v in d["code"].value_counts().head(5).items()
+            {"code": str(k), "deals": int(v)}
+            for k, v in d["code"].map(underlying_of).value_counts().head(5).items()
         ]
 
     if trips is None or trips.empty:
@@ -62,8 +86,13 @@ def behavior(trips: pd.DataFrame, deals: pd.DataFrame, fx=None) -> dict:
         worst_trade=t.loc[t["pnl"].idxmin()].to_dict() if len(t) else None,
         realized_by_code=[
             {"code": k, "pnl": round(float(v), 2)}
-            for k, v in t.groupby("code")["pnl"].sum().sort_values(ascending=False).items()
+            for k, v in t.assign(_u=t["code"].map(underlying_of))
+            .groupby("_u")["pnl"]
+            .sum()
+            .sort_values(ascending=False)
+            .items()
         ],
+        realized_by_market=_by_market(t),
     )
 
     # 处置效应：赚钱的拿得比亏钱的短，说明「截断利润、放任亏损」

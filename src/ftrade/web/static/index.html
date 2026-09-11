@@ -171,8 +171,12 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
         <div class="chart short"><canvas id="c-turnover"></canvas></div>
       </section>
     </div>
+    <section style="margin-bottom:14px" id="market-wrap" hidden>
+      <h2 data-t="byMarket"></h2><p class="hint" data-t="byMarketHint"></p>
+      <div class="tw"><table class="num" id="t-market"></table></div>
+    </section>
     <section style="margin-bottom:14px">
-      <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint"></p>
+      <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint2"></p>
       <div class="bars num" id="bycode"></div>
     </section>
     <section style="margin-bottom:14px" id="fees-wrap" hidden>
@@ -197,7 +201,7 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
         <div class="chart"><canvas id="c-weights"></canvas></div>
       </section>
       <section>
-        <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint"></p>
+        <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint2"></p>
         <div class="bars num" id="bycode2"></div>
       </section>
     </div>
@@ -394,6 +398,22 @@ function renderAll() {
   }).join("") || `<div class="empty">${T("noData")}</div>`;
   document.getElementById("bycode").innerHTML = barsHtml;
   document.getElementById("bycode2").innerHTML = barsHtml;
+
+  // realised by market
+  const mk = bh.realized_by_market || [];
+  const mkWrap = document.getElementById("market-wrap");
+  mkWrap.hidden = !mk.length;
+  if (mk.length) {
+    const total = mk.reduce((a, m) => a + (m.pnl || 0), 0);
+    document.getElementById("t-market").innerHTML =
+      `<thead><tr><th class="l">${T("cMarket")}</th><th>${T("cTrips")}</th>` +
+      `<th>${T("cRealized")}</th></tr></thead><tbody>` +
+      mk.map(m => `<tr><td class="l">${m.market}</td><td>${fmt(m.trips, 0)}</td>` +
+        `<td class="${dir(m.pnl)}">${fmt(m.pnl)}</td></tr>`).join("") +
+      `<tr><td class="l" style="font-weight:600">${T("cRealized")}</td>` +
+      `<td>${fmt(mk.reduce((a, m) => a + m.trips, 0), 0)}</td>` +
+      `<td class="${dir(total)}" style="font-weight:600">${fmt(total)}</td></tr></tbody>`;
+  }
 
   // trading costs
   const fe = rep.fees || {};
