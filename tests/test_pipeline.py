@@ -202,3 +202,27 @@ def test_realized_net_of_fees_is_reported_separately():
     assert bh["realized_pnl"] == 9806.11  # gross stays untouched
     assert bh["fees_total"] == 4806.13
     assert bh["realized_pnl_net"] == 4999.98
+
+
+def test_symbol_pnl_adds_open_positions_to_realized():
+    from ftrade.analysis.report import _merge_unrealized
+
+    by_code = [
+        {"code": "US.TQQQ", "pnl": 17480.53},
+        {"code": "US.NVDA", "pnl": 10010.83},
+    ]
+    holdings = [
+        {"code": "US.TQQQ", "pl_val_base": -6207.13},
+        # An option's open P&L belongs to the stock it is written on.
+        {"code": "US.TQQQ260911C75000", "pl_val_base": 294.00},
+        # Held but never closed, so it has no realised row at all.
+        {"code": "US.PDD", "pl_val_base": 500.0},
+    ]
+    out = {r["code"]: r for r in _merge_unrealized(by_code, holdings)}
+
+    assert out["US.TQQQ"]["unrealized"] == -5913.13
+    assert out["US.TQQQ"]["total"] == 11567.40
+    assert out["US.NVDA"]["unrealized"] == 0.0  # nothing open
+    assert out["US.PDD"] == {"code": "US.PDD", "pnl": 0.0, "unrealized": 500.0, "total": 500.0}
+    # Ranked by the combined figure, not by realised alone.
+    assert [r["code"] for r in _merge_unrealized(by_code, holdings)][0] == "US.TQQQ"

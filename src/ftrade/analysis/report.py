@@ -9,7 +9,41 @@ from ..storage.db import Database
 from . import corporate, equity, metrics, portfolio, trades
 from . import fees as fees_mod
 from .fx import FX, currency_for_code
+from .instruments import underlying_of
 from .pnl import fifo_round_trips, open_lots
+
+
+def _merge_unrealized(by_code: list[dict], holdings: list[dict]) -> list[dict]:
+    """Add open-position P&L to each symbol's realised figure.
+
+    Realised alone answers "what did I bank"; the broker's own per-symbol view
+    answers "how has this name done", which includes what is still open. A name
+    sitting on a large unrealised loss otherwise ranks as a winner.
+    """
+    unrealized: dict[str, float] = {}
+    for h in holdings or []:
+        code = underlying_of(h.get("code"))
+        value = h.get("pl_val_base")
+        if code and value is not None:
+            unrealized[code] = unrealized.get(code, 0.0) + float(value)
+
+    merged = []
+    for row in by_code or []:
+        code = row.get("code")
+        open_pl = unrealized.pop(code, 0.0)
+        merged.append(
+            {
+                **row,
+                "unrealized": round(open_pl, 2),
+                "total": round(float(row.get("pnl") or 0.0) + open_pl, 2),
+            }
+        )
+    # Names held but never closed have no realised row of their own.
+    for code, open_pl in unrealized.items():
+        merged.append(
+            {"code": code, "pnl": 0.0, "unrealized": round(open_pl, 2), "total": round(open_pl, 2)}
+        )
+    return sorted(merged, key=lambda r: r["total"], reverse=True)
 
 
 def _with_net_of_fees(behavior: dict, fee_stats: dict) -> dict:
@@ -72,8 +106,12 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
 
     acct = equity.account_equity(snaps, fx, a.base_currency)
     pf = portfolio.summary(pos, fx, a.concentration_warn)
+    bh = _with_net_of_fees(trades.behavior(trips, dls, fx), fee_stats)
     net = acct.get("total_assets")
     pf["holdings_detail"] = equity.net_asset_weights(pf.get("holdings_detail", []), net)
+    bh["realized_by_code"] = _merge_unrealized(
+        bh.get("realized_by_code", []), pf.get("holdings_detail", [])
+    )
     pf["concentrated"] = equity.net_asset_weights(pf.get("concentrated", []), net)
     if net:
         pf["net_assets"] = net
@@ -95,7 +133,7 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
         "equity_curve": curve[["snap_date", "total_assets", "drawdown"]].to_dict("records")
         if not curve.empty
         else [],
-        "behavior": _with_net_of_fees(trades.behavior(trips, dls, fx), fee_stats),
+        "behavior": bh,
         "fees": fee_stats,
         "realized_curve": trades.realized_curve(trips, fx),
         "pnl_distribution": trades.pnl_distribution(trips),
