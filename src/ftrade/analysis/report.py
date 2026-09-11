@@ -6,7 +6,7 @@ from datetime import datetime
 
 from ..storage import repo
 from ..storage.db import Database
-from . import equity, metrics, portfolio, trades
+from . import corporate, equity, metrics, portfolio, trades
 from .fx import FX, currency_for_code
 from .pnl import fifo_round_trips, open_lots
 
@@ -16,7 +16,7 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
     fx = FX(a.fx_rates, a.base_currency).rebase(base) if base else FX(a.fx_rates, a.base_currency)
 
     pos = repo.positions(db, acc_id=acc_id)
-    dls = repo.deals(db, acc_id=acc_id)
+    dls = corporate.apply_actions(repo.deals(db, acc_id=acc_id), corporate.from_config(cfg))
     snaps = repo.account_snapshots(db, acc_id=acc_id)
 
     cur_map = (

@@ -250,3 +250,140 @@ def test_closing_fill_without_a_position_is_dropped_not_flipped():
     )
     assert fifo_round_trips(deals).empty
     assert open_lots(deals).empty
+
+
+def _deal(code, side, qty, price, when):
+    return {
+        "code": code,
+        "stock_name": code,
+        "trd_side": side,
+        "qty": qty,
+        "price": price,
+        "create_time": when,
+    }
+
+
+def test_rename_lets_a_holding_pair_with_its_later_sale():
+    """A SPAC merger renames the ticker; buy and sell look like two symbols."""
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame(
+        [
+            _deal("US.CLA", "BUY", 70, 13.98, "2021-02-04 11:00:00"),
+            _deal("US.OUST", "SELL", 70, 5.15, "2022-01-04 10:00:00"),
+        ]
+    )
+    assert fifo_round_trips(deals).empty  # nothing pairs, and the sale is dropped
+
+    out = fifo_round_trips(
+        apply_actions(
+            deals, [Action(type="rename", date="2021-03-12", code="US.CLA", to="US.OUST")]
+        )
+    )
+    assert len(out) == 1
+    assert out.iloc[0]["pnl"] == round((5.15 - 13.98) * 70, 2)  # -618.10
+
+
+def test_split_restates_cost_basis_so_pnl_is_not_a_phantom_loss():
+    """Buying pre-split and selling post-split otherwise looks like a 50% loss."""
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame(
+        [
+            _deal("US.TQQQ", "BUY", 100, 110.00, "2025-11-10 10:00:00"),
+            _deal("US.TQQQ", "SELL", 200, 55.00, "2026-01-05 10:00:00"),
+        ]
+    )
+    naive = fifo_round_trips(deals)
+    assert naive.iloc[0]["pnl"] == -5500.0  # paired 100 @110 against 100 @55
+
+    out = fifo_round_trips(
+        apply_actions(deals, [Action(type="split", date="2025-11-18", code="US.TQQQ", ratio=2)])
+    )
+    assert len(out) == 1
+    assert out.iloc[0]["qty"] == 200  # the position doubled
+    assert out.iloc[0]["pnl"] == 0.0  # 200 @55 against 200 @55: flat, as it was
+
+
+def test_split_restrikes_the_options_of_its_underlying():
+    """A 2:1 split halves the strike and doubles the contracts."""
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame(
+        [
+            _deal("US.TQQQ251121P105000", "SELL_SHORT", 1, 4.60, "2025-11-10 10:00:00"),
+            _deal("US.TQQQ251121P52500", "BUY_BACK", 2, 1.00, "2025-11-24 10:00:00"),
+        ]
+    )
+
+    # Untreated, the two look like unrelated contracts: the short is never
+    # closed and gets settled at expiry for the full premium, while the
+    # buy-back has nothing to close and is discarded.
+    naive = fifo_round_trips(deals)
+    assert len(naive) == 1
+    assert naive.iloc[0]["close_reason"] == "EXPIRY"
+    assert naive.iloc[0]["pnl"] == 460.0  # overstated: closing cost is lost
+
+    out = fifo_round_trips(
+        apply_actions(deals, [Action(type="split", date="2025-11-18", code="US.TQQQ", ratio=2)])
+    )
+    assert len(out) == 1
+    assert out.iloc[0]["close_reason"] == "TRADE"
+    assert out.iloc[0]["qty"] == 2  # one pre-split contract became two
+    # Premium is conserved (1 x 4.60 == 2 x 2.30) and the buy-back is charged.
+    assert out.iloc[0]["pnl"] == 260.0  # (2.30 - 1.00) * 2 * 100
+
+
+def test_actions_leave_deals_after_their_date_alone():
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame([_deal("US.TQQQ", "BUY", 100, 55.0, "2026-01-05 10:00:00")])
+    out = apply_actions(deals, [Action(type="split", date="2025-11-18", code="US.TQQQ", ratio=2)])
+    assert out.iloc[0]["qty"] == 100 and out.iloc[0]["price"] == 55.0
+
+
+def test_reverse_split_uses_a_ratio_below_one():
+    """Ten shares becoming one is the same operation with ratio 0.1."""
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame([_deal("US.QTT", "BUY", 1000, 2.85, "2021-03-12 10:00:00")])
+    out = apply_actions(deals, [Action(type="split", date="2022-06-01", code="US.QTT", ratio=0.1)])
+
+    assert out.iloc[0]["qty"] == 100  # ten-for-one
+    assert out.iloc[0]["price"] == 28.5  # cost basis preserved
+
+
+def test_writeoff_closes_the_residual_position_at_zero():
+    """A delisting leaves no closing trade, so the loss is never realised."""
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame(
+        [
+            _deal("US.QTT", "BUY", 1000, 2.85, "2021-03-12 10:00:00"),
+            _deal("US.QTT", "SELL", 150, 1.03, "2022-03-14 10:00:00"),
+        ]
+    )
+    # Untreated, 850 shares sit open for ever and their loss stays invisible.
+    assert open_lots(deals).iloc[0]["qty"] == 850
+
+    acted = apply_actions(deals, [Action(type="writeoff", date="2023-01-01", code="US.QTT")])
+    assert open_lots(acted).empty
+
+    trips = fifo_round_trips(acted)
+    written = trips[trips["close_price"] == 0.0]
+    assert len(written) == 1
+    assert written.iloc[0]["qty"] == 850
+    assert written.iloc[0]["pnl"] == round(-850 * 2.85, 2)
+
+
+def test_writeoff_does_nothing_when_the_position_is_already_flat():
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame(
+        [
+            _deal("US.QTT", "BUY", 100, 2.85, "2021-03-12 10:00:00"),
+            _deal("US.QTT", "SELL", 100, 1.03, "2022-03-14 10:00:00"),
+        ]
+    )
+    out = apply_actions(deals, [Action(type="writeoff", date="2023-01-01", code="US.QTT")])
+    assert len(out) == len(deals)  # no synthetic row appended
