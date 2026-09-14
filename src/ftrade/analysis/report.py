@@ -95,6 +95,9 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
         return cur_map.get(code) or currency_for_code(code)
 
     trips = fifo_round_trips(dls, currency_of=currency_of)
+    # trades.behavior() needs the same per-deal currency to convert turnover
+    # before summing; deals carries no currency column of its own.
+    dls = dls.assign(currency=dls["code"].map(currency_of)) if not dls.empty else dls
 
     fee_stats = fees_mod.fee_summary(repo.order_fees(db, acc_id=acc_id), fx)
     flows = repo.cash_flows(db, acc_id=acc_id)

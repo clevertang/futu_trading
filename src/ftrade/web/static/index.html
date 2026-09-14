@@ -183,9 +183,13 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
       <h2 data-t="fees"></h2><p class="hint" data-t="feesHint"></p>
       <div class="grid half" style="margin:0">
         <div class="tw"><table class="num" id="t-fees-year"></table></div>
-        <div class="bars num" id="fees-symbols"></div>
+        <div>
+          <p class="hint" style="margin-bottom:8px" data-t="cSymbolFees"></p>
+          <div class="bars num" id="fees-symbols"></div>
+        </div>
       </div>
       <p class="dispo-note" data-t="feesNote"></p>
+      <p class="dispo-note" id="dividends-note" hidden></p>
     </section>
     <section>
       <h2 data-t="trips"></h2><p class="hint" data-t="tripsHint"></p>
@@ -250,6 +254,39 @@ const compact = v => v == null || isNaN(v) ? "-"
   : Number(v).toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const pct = (v, d = 2) => v == null || isNaN(v) ? "-" : (Number(v) * 100).toFixed(d) + "%";
 const dir = v => v == null ? "" : (v > 0 ? "up" : v < 0 ? "down" : "");
+// Symbol codes, company names and broker enum strings all come from Futu's
+// API, not from this page's own data -- escape before interpolating into
+// innerHTML so a stray "&"/"<" in a name renders instead of breaking markup.
+const esc = v => String(v ?? "").replace(/[&<>"']/g, m => (
+  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+
+// Formats each observation's raw params using this page's own number
+// formatting (pct/fmt), then fills the matching i18n template. Falls back to
+// the backend's pre-rendered Chinese topic/message for any code this page
+// does not (yet) know how to translate, rather than showing nothing.
+const OBS_FORMATTERS = {
+  leverage: p => ({
+    exposure: pct(p.exposure, 0), cash: fmt(p.cash, 0), currency: p.currency,
+    riskPart: p.risk_status ? fill("obsMsg_leverageRisk", { riskStatus: p.risk_status }) : "",
+  }),
+  concentration: p => ({
+    name: p.name, weight: pct(p.weight, 1), threshold: pct(p.threshold, 0),
+    ofNet: p.weight_of_net != null
+      ? fill("obsMsg_concentrationOfNet", { ofNet: pct(p.weight_of_net, 0) }) : "",
+  }),
+  diversification: p => ({ effective: p.effective }),
+  currency_exposure: p => ({ share: pct(p.share, 0), currency: p.currency }),
+  disposition: p => ({ winDays: p.win_days, lossDays: p.loss_days }),
+  profit_factor: p => ({ factor: p.factor }),
+  frequency: p => ({ perMonth: p.per_month }),
+  data_integrity: p => ({ codes: p.codes }),
+  drawdown: p => ({ maxDrawdown: pct(p.max_drawdown, 1) }),
+};
+function renderObservation(o) {
+  const fmtFn = o.code && OBS_FORMATTERS[o.code];
+  if (!fmtFn) return { topic: o.topic, message: o.message };
+  return { topic: T("obsTopic_" + o.code), message: fill("obsMsg_" + o.code, fmtFn(o.params || {})) };
+}
 
 function table(el, cols, rows) {
   el.innerHTML = "<thead><tr>" + cols.map(c => `<th class="${c.l ? "l" : ""}">${T(c.t)}</th>`).join("") +
@@ -364,9 +401,15 @@ function renderAll() {
       ? fill("exposureNote", { n: pct(eq.gross_exposure, 0) }) : "";
   }
 
-  document.getElementById("obs").innerHTML = (rep.observations || []).map(o =>
-    `<li class="${o.level}"><b>[${o.topic}]</b> ${o.message}</li>`).join("")
-    || `<li style="color:var(--faint)">${T("noObs")}</li>`;
+  const obsRows = rep.observations || [];
+  document.getElementById("obs").innerHTML = (
+    obsRows.length && !(obsRows.length === 1 && obsRows[0].code === "none")
+      ? obsRows.filter(o => o.code !== "none").map(o => {
+          const rendered = renderObservation(o);
+          return `<li class="${o.level}"><b>[${esc(rendered.topic)}]</b> ${esc(rendered.message)}</li>`;
+        }).join("")
+      : `<li style="color:var(--faint)">${T("noObs")}</li>`
+  );
 
   // disposition
   const win = bh.avg_win_holding_days, loss = bh.avg_loss_holding_days;
@@ -391,10 +434,12 @@ function renderAll() {
   const peak = Math.max(...shown.map(s => Math.abs(val(s))), 1);
   const barsHtml = shown.map(s => {
     const v = val(s), w = Math.abs(v) / peak * 50, neg = v < 0;
-    const open = s.unrealized != null && s.unrealized !== 0
-      ? ` (${T("cUnrealizedCol")} ${compact(s.unrealized)})` : "";
-    return `<div class="bar-row"><span class="nm" title="${s.code}">${s.code}</span>
-      <span class="bar-track" title="${T("cRealized")} ${fmt(s.pnl)}${open}"><span class="bar-fill" style="${neg
+    const parts = [`${T("cRealized")} ${fmt(s.pnl)}`];
+    if (s.unrealized) parts.push(`${T("cUnrealizedCol")} ${fmt(s.unrealized)}`);
+    if (s.dividends) parts.push(`${T("cDividends")} ${fmt(s.dividends)}`);
+    if (parts.length > 1) parts.push(`${T("cTotalCol")} ${fmt(v)}`);
+    return `<div class="bar-row"><span class="nm" title="${esc(s.code)}">${esc(s.code)}</span>
+      <span class="bar-track" title="${esc(parts.join(" · "))}"><span class="bar-fill" style="${neg
         ? `right:50%;width:${w}%;background:var(--down)`
         : `left:50%;width:${w}%;background:var(--up)`}"></span></span>
       <span class="amt ${dir(v)}">${compact(v)}</span></div>`;
@@ -411,7 +456,7 @@ function renderAll() {
     document.getElementById("t-market").innerHTML =
       `<thead><tr><th class="l">${T("cMarket")}</th><th>${T("cTrips")}</th>` +
       `<th>${T("cRealized")}</th></tr></thead><tbody>` +
-      mk.map(m => `<tr><td class="l">${m.market}</td><td>${fmt(m.trips, 0)}</td>` +
+      mk.map(m => `<tr><td class="l">${esc(m.market)}</td><td>${fmt(m.trips, 0)}</td>` +
         `<td class="${dir(m.pnl)}">${fmt(m.pnl)}</td></tr>`).join("") +
       `<tr><td class="l" style="font-weight:600">${T("cRealized")}</td>` +
       `<td>${fmt(mk.reduce((a, m) => a + m.trips, 0), 0)}</td>` +
@@ -420,9 +465,10 @@ function renderAll() {
 
   // trading costs
   const fe = rep.fees || {};
+  const cf = rep.cash_flows || {};
   const feeWrap = document.getElementById("fees-wrap");
-  feeWrap.hidden = !(fe.count > 0);
-  if (!feeWrap.hidden) {
+  feeWrap.hidden = !(fe.count > 0 || cf.dividends);
+  if (fe.count > 0) {
     const years = Object.entries(fe.by_year || {}).sort();
     document.getElementById("t-fees-year").innerHTML =
       `<thead><tr><th class="l">${T("cYear")}</th><th>${T("cFees")}</th></tr></thead><tbody>` +
@@ -432,20 +478,33 @@ function renderAll() {
     const syms = fe.top_symbols || [];
     const peak = Math.max(...syms.map(x => x.fees), 1);
     document.getElementById("fees-symbols").innerHTML = syms.map(x =>
-      `<div class="bar-row"><span class="nm" title="${x.code}">${x.code}</span>
+      `<div class="bar-row"><span class="nm" title="${esc(x.code)}">${esc(x.code)}</span>
         <span class="bar-track"><span class="bar-fill" style="left:0;width:${x.fees / peak * 100}%;background:var(--down)"></span></span>
         <span class="amt">${fmt(x.fees)}</span></div>`).join("");
+  }
+
+  // dividends -- computed and verified against the broker's own figures, but
+  // otherwise had no home anywhere on the page.
+  const divNote = document.getElementById("dividends-note");
+  if (cf.dividends) {
+    divNote.hidden = false;
+    divNote.innerHTML = fill("dividendsNote", {
+      div: fmt(cf.dividends), tax: fmt(Math.abs(cf.dividend_tax || 0)),
+    });
+  } else {
+    divNote.hidden = true;
   }
 
   // tables
   const risks = rep.position_risk || {};
   table(document.getElementById("t-pos"), [
-    { t: "cCode", f: r => r.code, l: 1, cls: "code" }, { t: "cName", f: r => r.name || "", l: 1 },
+    { t: "cCode", f: r => esc(r.code), l: 1, cls: "code" }, { t: "cName", f: r => esc(r.name), l: 1 },
     { t: "cQty", f: r => fmt(r.qty, 0) }, { t: "cCost", f: r => fmt(r.cost_price, 3) },
-    { t: "cLast", f: r => fmt(r.last_price, 3) }, { t: "cValue", f: r => fmt(r.market_val) },
+    { t: "cLast", f: r => fmt(r.last_price, 3) },
+    { t: "cValue", f: r => fmt(r.market_val_base ?? r.market_val) },
     { t: "cWeight", f: r => pct(r.weight) },
     { t: "ofNet", f: r => r.weight_of_net != null ? pct(r.weight_of_net) : "-" },
-    { t: "cPl", f: r => fmt(r.pl_val), c: r => dir(r.pl_val) },
+    { t: "cPl", f: r => fmt(r.pl_val_base ?? r.pl_val), c: r => dir(r.pl_val_base ?? r.pl_val) },
     { t: "cPlPct", f: r => r.pl_ratio != null ? r.pl_ratio.toFixed(2) + "%" : "-", c: r => dir(r.pl_ratio) },
     { t: "cVol", f: r => { const m = risks[r.code]; return m ? pct(m.annual_vol, 1) : "-"; } },
     { t: "cDd", f: r => { const m = risks[r.code]; return m ? pct(m.drawdown_from_peak, 1) : "-"; },
@@ -453,10 +512,10 @@ function renderAll() {
   ], pf.holdings_detail || []);
 
   table(document.getElementById("t-accs"), [
-    { t: "cAccount", f: r => r.acc_id, l: 1, cls: "code" },
-    { t: "cEnv", f: r => r.trd_env, l: 1 }, { t: "cType", f: r => r.acc_type, l: 1 },
-    { t: "cFirm", f: r => r.security_firm, l: 1 },
-    { t: "cMarkets", f: r => r.trdmarket_auth || "-", l: 1 },
+    { t: "cAccount", f: r => esc(r.acc_id), l: 1, cls: "code" },
+    { t: "cEnv", f: r => esc(r.trd_env), l: 1 }, { t: "cType", f: r => esc(r.acc_type), l: 1 },
+    { t: "cFirm", f: r => esc(r.security_firm), l: 1 },
+    { t: "cMarkets", f: r => esc(r.trdmarket_auth) || "-", l: 1 },
     { t: "cStatus", f: r => `${r.acc_status}<span class="pill${r.acc_status === "ACTIVE" ? "" : " off"}">${
         r.acc_status === "ACTIVE" ? T("active") : T("inactive")}</span>`, l: 1 },
   ], rep.accounts || []);
@@ -465,7 +524,7 @@ function renderAll() {
   document.getElementById("recon-wrap").hidden = !recon.length;
   if (recon.length) {
     table(document.getElementById("t-recon"), [
-      { t: "cCode", f: r => r.code, l: 1, cls: "code" },
+      { t: "cCode", f: r => esc(r.code), l: 1, cls: "code" },
       { t: "cLocal", f: r => fmt(r.local_fifo_qty, 0) },
       { t: "cBroker", f: r => fmt(r.broker_qty, 0) },
       { t: "cDiff", f: r => fmt(r.local_fifo_qty - r.broker_qty, 0),
@@ -474,7 +533,7 @@ function renderAll() {
   }
 
   table(document.getElementById("t-trips"), [
-    { t: "cCode", f: r => r.code, l: 1, cls: "code" }, { t: "cName", f: r => r.stock_name || "", l: 1 },
+    { t: "cCode", f: r => esc(r.code), l: 1, cls: "code" }, { t: "cName", f: r => esc(r.stock_name), l: 1 },
     { t: "cOpen", f: r => String(r.open_time).slice(0, 10), l: 1 },
     { t: "cClose", f: r => String(r.close_time).slice(0, 10), l: 1 },
     { t: "cQty", f: r => fmt(r.qty, 0) },
@@ -534,8 +593,11 @@ function drawCharts(name) {
       charts.equity = new Chart(document.getElementById("c-equity"), { type: "line",
         data: { labels: eq.map(d => d.snap_date), datasets: [{ data: eq.map(d => d.total_assets),
           borderColor: accent, borderWidth: 2, pointRadius: 0, tension: .2 }] },
-        options: { ...b, scales: { ...b.scales, y: { ...b.scales.y,
-          ticks: { ...b.scales.y.ticks, callback: v => compact(v) } } } } });
+        options: { ...b,
+          plugins: { ...b.plugins, tooltip: { ...b.plugins.tooltip,
+            callbacks: { label: c => `${fmt(c.parsed.y)} ${cur}` } } },
+          scales: { ...b.scales, y: { ...b.scales.y,
+            ticks: { ...b.scales.y.ticks, callback: v => compact(v) } } } } });
     } else {
       box.hidden = true; empty.hidden = false;
       empty.innerHTML = fill("equityEmpty", { n: eq.length });
@@ -569,7 +631,7 @@ function drawCharts(name) {
       data: { labels: tbm.map(([m]) => m), datasets: [{ data: tbm.map(([, v]) => v),
         backgroundColor: accent, borderRadius: 1 }] },
       options: { ...b, plugins: { ...b.plugins, tooltip: { ...b.plugins.tooltip,
-        callbacks: { label: c => fmt(c.parsed.y, 0) } } },
+        callbacks: { label: c => `${fmt(c.parsed.y, 0)} ${cur}` } } },
         scales: { ...b.scales, y: { ...b.scales.y,
           ticks: { ...b.scales.y.ticks, callback: v => compact(v) } } } } });
   }
