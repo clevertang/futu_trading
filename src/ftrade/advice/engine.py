@@ -6,8 +6,8 @@ Phase 1 的目标是把「客观事实」摆出来：集中度、币种错配、
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 
 @dataclass
@@ -15,6 +15,15 @@ class Observation:
     level: str  # info | warn
     topic: str
     message: str
+    # `code` + `params` let the web dashboard re-render this observation in
+    # its own selected language. `topic`/`message` stay pre-rendered Chinese,
+    # unchanged, since the CLI prints them directly and this project's
+    # convention is English for repo artifacts but Chinese for existing
+    # user-facing runtime strings -- only the (newer, trilingual) web page
+    # needs a translation path, via `code` as a lookup key into its own
+    # message templates rather than by parsing `message`.
+    code: str = ""
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 class AdviceEngine(Protocol):
@@ -40,6 +49,13 @@ def observations(report: dict, cfg) -> list[Observation]:
                 f"证券市值为净资产的 {eq['gross_exposure']:.0%}，现金 {eq.get('cash', 0):,.0f} "
                 f"{eq.get('base_currency', '')} 为负，即以融资持仓"
                 + (f"，风险等级 {eq['risk_status']}" if eq.get("risk_status") else ""),
+                code="leverage",
+                params={
+                    "exposure": eq.get("gross_exposure"),
+                    "cash": eq.get("cash", 0),
+                    "currency": eq.get("base_currency", ""),
+                    "risk_status": eq.get("risk_status"),
+                },
             )
         )
 
@@ -52,19 +68,42 @@ def observations(report: dict, cfg) -> list[Observation]:
                 "集中度",
                 f"{item['name'] or item['code']} 占组合 {item['weight']:.1%}{extra}，"
                 f"超过阈值 {thr:.0%}",
+                code="concentration",
+                params={
+                    "name": item["name"] or item["code"],
+                    "weight": item["weight"],
+                    "weight_of_net": item.get("weight_of_net") if of_net else None,
+                    "threshold": thr,
+                },
             )
         )
 
     eff = pf.get("effective_positions")
     if eff is not None and eff < 3:
-        out.append(Observation("warn", "分散度", f"有效持仓数仅 {eff}，组合高度依赖少数标的"))
+        out.append(
+            Observation(
+                "warn",
+                "分散度",
+                f"有效持仓数仅 {eff}，组合高度依赖少数标的",
+                code="diversification",
+                params={"effective": eff},
+            )
+        )
 
     by_cur = pf.get("by_currency") or {}
     total = sum(by_cur.values()) or 1
     for cur, val in by_cur.items():
         share = val / total
         if cur != cfg.analysis.base_currency and share > 0.7:
-            out.append(Observation("info", "币种暴露", f"{share:.0%} 的市值在 {cur}，存在汇率敞口"))
+            out.append(
+                Observation(
+                    "info",
+                    "币种暴露",
+                    f"{share:.0%} 的市值在 {cur}，存在汇率敞口",
+                    code="currency_exposure",
+                    params={"share": share, "currency": cur},
+                )
+            )
 
     if bh.get("disposition_effect"):
         out.append(
@@ -73,17 +112,36 @@ def observations(report: dict, cfg) -> list[Observation]:
                 "交易行为",
                 f"盈利单平均持有 {bh['avg_win_holding_days']} 天，亏损单 {bh['avg_loss_holding_days']} 天，"
                 "呈现「赚了就跑、亏了死扛」的处置效应",
+                code="disposition",
+                params={
+                    "win_days": bh["avg_win_holding_days"],
+                    "loss_days": bh["avg_loss_holding_days"],
+                },
             )
         )
 
     pf_factor = bh.get("profit_factor")
     if pf_factor is not None and pf_factor < 1:
-        out.append(Observation("warn", "盈亏比", f"盈亏比 {pf_factor}，历史已实现交易整体亏损"))
+        out.append(
+            Observation(
+                "warn",
+                "盈亏比",
+                f"盈亏比 {pf_factor}，历史已实现交易整体亏损",
+                code="profit_factor",
+                params={"factor": pf_factor},
+            )
+        )
 
     dpm = bh.get("deals_per_month")
     if dpm is not None and dpm > 20:
         out.append(
-            Observation("info", "交易频率", f"月均成交 {dpm} 笔，已经不太像低频策略，注意摩擦成本")
+            Observation(
+                "info",
+                "交易频率",
+                f"月均成交 {dpm} 笔，已经不太像低频策略，注意摩擦成本",
+                code="frequency",
+                params={"per_month": dpm},
+            )
         )
 
     if report.get("reconciliation"):
@@ -94,13 +152,23 @@ def observations(report: dict, cfg) -> list[Observation]:
                 "数据完整性",
                 f"本地 FIFO 推算持仓与券商不一致（{codes}），历史成交可能没拉全或含拆股/红股，"
                 "可以试试 `ftrade sync --full`",
+                code="data_integrity",
+                params={"codes": codes},
             )
         )
 
     risk = report.get("risk") or {}
     if risk.get("max_drawdown") is not None and risk["max_drawdown"] < -0.2:
-        out.append(Observation("info", "回撤", f"快照区间最大回撤 {risk['max_drawdown']:.1%}"))
+        out.append(
+            Observation(
+                "info",
+                "回撤",
+                f"快照区间最大回撤 {risk['max_drawdown']:.1%}",
+                code="drawdown",
+                params={"max_drawdown": risk["max_drawdown"]},
+            )
+        )
 
     if not out:
-        out.append(Observation("info", "总体", "未触发任何风险规则"))
+        out.append(Observation("info", "总体", "未触发任何风险规则", code="none"))
     return out

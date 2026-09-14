@@ -42,6 +42,15 @@ def behavior(trips: pd.DataFrame, deals: pd.DataFrame, fx=None) -> dict:
         d["date"] = d["create_time"].astype(str).str[:10]
         d["month"] = d["date"].str[:7]
         d["turnover"] = d["qty"].astype(float) * d["price"].astype(float)
+        # deals carries no currency column, so a mixed HK/US history would
+        # otherwise add HKD notional straight onto USD as if they were the
+        # same unit -- exactly the bug already fixed once for round-trip P&L
+        # (pnl.py), just not yet here. currency_of mirrors that resolution:
+        # a currently-held symbol's own currency, else the market prefix.
+        if fx is not None and "currency" in d:
+            d["turnover"] = [
+                fx.to_base(v, c) or 0.0 for v, c in zip(d["turnover"], d["currency"], strict=True)
+            ]
         months = d["month"].nunique() or 1
         out["deal_count"] = int(len(d))
         out["trading_days"] = int(d["date"].nunique())

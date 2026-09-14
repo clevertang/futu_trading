@@ -324,3 +324,71 @@ def test_equity_curve_converts_currency_per_row():
     # changed again -- callers must opt in by passing fx.
     raw = equity_curve(snaps, fx=None)
     assert raw.iloc[0]["total_assets"] == 269701.08
+
+
+def test_turnover_converts_currency_before_summing():
+    """The deals table has no currency column, so a mixed HK/US history would
+    otherwise add HKD notional straight onto USD -- exactly the bug already
+    fixed once for round-trip P&L (pnl.py), just not caught here until now.
+    Quantified against real data: 25 of 75 months were affected, overstating
+    total turnover across the account's history by over $1M (28%).
+    """
+    import pandas as pd
+
+    from ftrade.analysis.fx import FX
+    from ftrade.analysis.trades import behavior
+
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "HK.00700",
+                "trd_side": "SELL",
+                "qty": 200,
+                "price": 383.0,
+                "currency": "HKD",
+                "create_time": "2024-06-19 10:00:00",
+            },
+            {
+                "code": "US.NVDA",
+                "trd_side": "BUY",
+                "qty": 10,
+                "price": 120.0,
+                "currency": "USD",
+                "create_time": "2024-06-20 10:00:00",
+            },
+        ]
+    )
+    fx = FX({"HKD": 1.0, "USD": 7.8}, "HKD").rebase("USD")
+    out = behavior(pd.DataFrame(), deals, fx=fx)
+
+    # 200*383 HKD -> USD, plus 10*120 USD outright.
+    expected = (200 * 383.0 / 7.8) + (10 * 120.0)
+    assert out["turnover_by_month"]["2024-06"] == pytest.approx(expected, abs=0.01)
+
+
+def test_account_equity_handles_a_currency_change_between_syncs():
+    """If analysis.base_currency in config.yaml is changed and the tool is
+    re-synced, older snapshot rows keep whatever currency they were written
+    in. Summing raw values across accounts before converting once (the old
+    approach) would silently misconvert any row using a different currency
+    than the one passed in -- convert per row instead, using each row's own
+    `currency` column.
+    """
+    import pandas as pd
+
+    from ftrade.analysis.equity import account_equity
+    from ftrade.analysis.fx import FX
+
+    rows = pd.DataFrame(
+        [
+            _snapshot(acc_id=1, total_assets=100000.0, cash=0, market_val=100000.0),
+            # A second account synced after the config's base_currency moved
+            # to USD, still on the same snap_date.
+            _snapshot(acc_id=2, currency="USD", total_assets=1000.0, cash=0, market_val=1000.0),
+        ]
+    )
+    fx = FX({"HKD": 1.0, "USD": 7.8}, "HKD")  # base_currency requested: HKD
+    eq = account_equity(rows, fx, "HKD")
+
+    # 100,000 HKD + (1,000 USD -> 7,800 HKD) = 107,800, not 101,000.
+    assert eq["total_assets"] == 107800.0

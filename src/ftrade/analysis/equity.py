@@ -30,11 +30,21 @@ def account_equity(
         return {}
 
     out: dict = {"snap_date": str(date), "base_currency": fx.base}
+    # Convert per row before summing rather than summing then converting once:
+    # every account currently syncs under the same configured currency, but a
+    # config change between syncs would leave older rows carrying the old
+    # currency string in their own `currency` column, and summing first would
+    # silently misconvert them. Same fix already made to metrics.equity_curve.
+    currencies = df.get("currency")
     for col in SNAPSHOT_COLUMNS:
         if col not in df:
             continue
-        raw = pd.to_numeric(df[col], errors="coerce").fillna(0.0).sum()
-        out[col] = round(float(fx.to_base(float(raw), stored_currency) or 0.0), 2)
+        values = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        if currencies is not None:
+            total = sum(fx.to_base(v, c) or 0.0 for v, c in zip(values, currencies, strict=True))
+        else:
+            total = fx.to_base(float(values.sum()), stored_currency) or 0.0
+        out[col] = round(float(total), 2)
 
     # Only accounts holding something report a meaningful risk level; the rest
     # come back as "N/A" and would otherwise mask the real one.
