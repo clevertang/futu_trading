@@ -100,7 +100,7 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
     flows = repo.cash_flows(db, acc_id=acc_id)
     cash_stats = cash_mod.cash_summary(flows, fx)
     dividends = cash_mod.dividends_by_symbol(flows, fx, set(dls.get("code", [])))
-    curve = metrics.equity_curve(snaps)
+    curve = metrics.equity_curve(snaps, fx)
 
     # 本地 FIFO 推算的持仓 vs 券商返回的持仓，对不上通常意味着历史成交没拉全
     lots = open_lots(dls)

@@ -10,12 +10,26 @@ import pandas as pd
 TRADING_DAYS = 252
 
 
-def equity_curve(account_snapshots: pd.DataFrame) -> pd.DataFrame:
-    """按日汇总所有账户的总资产。"""
+def equity_curve(account_snapshots: pd.DataFrame, fx=None) -> pd.DataFrame:
+    """按日汇总所有账户的总资产，换算到 fx.base。
+
+    Snapshots are stored in whatever `analysis.base_currency` was configured at
+    sync time -- per row, via its own `currency` column, so a config change
+    between syncs is handled correctly rather than assumed constant. Without
+    `fx` this returns the stored figures unconverted, which is only correct
+    when the caller's requested base happens to match the sync-time currency;
+    every caller in this codebase should pass `fx`.
+    """
     if account_snapshots is None or account_snapshots.empty:
         return pd.DataFrame(columns=["snap_date", "total_assets"])
+    snaps = account_snapshots.copy()
+    if fx is not None:
+        snaps["total_assets"] = [
+            fx.to_base(v, c) or 0.0
+            for v, c in zip(snaps["total_assets"], snaps.get("currency"), strict=True)
+        ]
     df = (
-        account_snapshots.groupby("snap_date", as_index=False)["total_assets"]
+        snaps.groupby("snap_date", as_index=False)["total_assets"]
         .sum()
         .sort_values("snap_date")
         .reset_index(drop=True)
