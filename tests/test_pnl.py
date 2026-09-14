@@ -1,6 +1,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from ftrade.analysis.pnl import fifo_round_trips, open_lots
 
@@ -472,3 +473,101 @@ def test_realized_by_market_counts_stock_and_options_together():
     assert markets["US"]["pnl"] == 200.0  # a covered call and its shares net out
     assert markets["US"]["trips"] == 2
     assert markets["HK"]["pnl"] == 80.0
+
+
+def test_open_option_positions_computes_moneyness_and_premium_decay():
+    import pandas as pd
+
+    from ftrade.analysis.options_monitor import open_option_positions
+
+    positions = pd.DataFrame(
+        [
+            # Short call, still out of the money, most of the premium decayed.
+            {
+                "code": "US.TQQQ260918C78000",
+                "qty": -2.0,
+                "cost_price": 0.53,
+                "nominal_price": 0.075,
+            },
+            # Long call, in the money, has lost value since entry.
+            {
+                "code": "US.PDD261218C70000",
+                "qty": 3.0,
+                "cost_price": 15.783,
+                "nominal_price": 11.226,
+            },
+        ]
+    )
+    klines = {
+        "US.TQQQ": pd.DataFrame({"close": [69.0, 70.98]}),
+        "US.PDD": pd.DataFrame({"close": [75.0, 77.81]}),
+    }
+    out = {r["code"]: r for r in open_option_positions(positions, klines, as_of=date(2026, 9, 14))}
+
+    tqqq = out["US.TQQQ260918C78000"]
+    assert tqqq["direction"] == "SHORT"
+    assert tqqq["days_to_expiry"] == 4
+    assert tqqq["is_itm"] is False  # 70.98 < 78 strike
+    assert tqqq["premium_change_pct"] == pytest.approx((0.53 - 0.075) / 0.53 * 100, abs=0.1)
+    assert tqqq["assignment_watch"] is False  # not ITM, so no early-assignment flag
+
+    pdd = out["US.PDD261218C70000"]
+    assert pdd["direction"] == "LONG"
+    assert pdd["is_itm"] is True  # 77.81 > 70 strike
+    assert pdd["premium_change_pct"] == pytest.approx((11.226 - 15.783) / 15.783 * 100, abs=0.1)
+    assert pdd["assignment_watch"] is False  # long, not short -- assignment risk is the writer's
+
+
+def test_assignment_watch_flags_only_itm_short_calls():
+    import pandas as pd
+
+    from ftrade.analysis.options_monitor import open_option_positions
+
+    positions = pd.DataFrame(
+        [{"code": "US.TQQQ260918C60000", "qty": -1.0, "cost_price": 8.0, "nominal_price": 11.0}]
+    )
+    klines = {"US.TQQQ": pd.DataFrame({"close": [70.98]})}
+    out = open_option_positions(positions, klines, as_of=date(2026, 9, 14))[0]
+
+    assert out["is_itm"] is True  # 70.98 > 60 strike
+    assert out["assignment_watch"] is True
+
+
+def test_near_expiry_flag_and_missing_underlying_price():
+    import pandas as pd
+
+    from ftrade.analysis.options_monitor import open_option_positions
+
+    positions = pd.DataFrame(
+        [{"code": "US.TQQQ260914C73000", "qty": -2.0, "cost_price": 0.3, "nominal_price": 0.095}]
+    )
+    # No klines synced for the underlying -- moneyness cannot be computed, but
+    # the contract's own facts (DTE, premium decay) still can be.
+    out = open_option_positions(positions, {}, as_of=date(2026, 9, 14))[0]
+
+    assert out["days_to_expiry"] == 0
+    assert out["near_expiry"] is True
+    assert out["underlying_price"] is None
+    assert out["is_itm"] is None
+    assert out["premium_change_pct"] == pytest.approx(68.3, abs=0.1)
+
+
+def test_milestone_progress_converts_currency_and_tracks_a_personal_target():
+    from ftrade.analysis.equity import milestone_progress
+    from ftrade.analysis.fx import FX
+
+    fx = FX({"USD": 1.0}, "USD")
+    out = milestone_progress(31987.50, {"amount": 50000, "currency": "USD"}, fx)
+
+    assert out["target"] == 50000.0
+    assert out["progress_pct"] == 64.0
+    assert out["remaining"] == 18012.50
+    assert out["reached"] is False
+
+    # No milestone configured -- the tracker is simply off, not an error.
+    assert milestone_progress(31987.50, None, fx) is None
+
+    # Reached: capped at 100%, not allowed to read as "164% of goal".
+    reached = milestone_progress(82000.0, {"amount": 50000, "currency": "USD"}, fx)
+    assert reached["progress_pct"] == 100.0
+    assert reached["reached"] is True

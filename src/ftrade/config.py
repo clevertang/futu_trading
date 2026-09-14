@@ -46,6 +46,9 @@ class AnalysisConfig:
     # Corporate actions cannot be detected from the deal feed; they are declared.
     corporate_actions: list = field(default_factory=list)
     risk_free_rate: float = 0.03
+    # A personal plan tracked as a fact, not enforced: e.g. "switch to QQQ once
+    # net assets reach 50,000 USD". None disables the tracker.
+    net_asset_milestone: dict | None = None
 
 
 @dataclass

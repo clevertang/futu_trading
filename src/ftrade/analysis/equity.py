@@ -64,6 +64,33 @@ def account_equity(
     return out
 
 
+def milestone_progress(net_assets: float | None, milestone: dict | None, fx: FX) -> dict | None:
+    """Progress toward a personal net-asset target the user set for themselves.
+
+    Purely descriptive -- how far along a plan already made, not a suggestion
+    that the plan is right or that now is the time to act on it. `milestone`
+    is read straight from config (`{"amount": 50000, "currency": "USD",
+    "label": "..."}`), converted into whatever currency the report is in.
+    """
+    if not milestone or net_assets is None:
+        return None
+    amount = milestone.get("amount")
+    currency = milestone.get("currency") or fx.base
+    if not amount:
+        return None
+    target = fx.to_base(float(amount), currency)
+    if not target:
+        return None
+    return {
+        "target": round(target, 2),
+        "current": round(net_assets, 2),
+        "progress_pct": round(min(net_assets / target, 1.0) * 100, 1),
+        "remaining": round(max(target - net_assets, 0.0), 2),
+        "reached": net_assets >= target,
+        "label": milestone.get("label"),
+    }
+
+
 def net_asset_weights(holdings: list[dict], net_assets: float | None) -> list[dict]:
     """Add each holding's share of net assets alongside its share of securities.
 

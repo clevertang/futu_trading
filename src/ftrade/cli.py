@@ -196,6 +196,57 @@ def cmd_report(args, cfg) -> int:
         f"胜率 {bh.get('win_rate', 0):.1%}｜已实现 {_fmt(bh.get('realized_pnl'))}"
     )
 
+    milestone = rep.get("milestone")
+    if milestone:
+        label = f"（{milestone['label']}）" if milestone.get("label") else ""
+        console.print(
+            f"[bold]里程碑{label}[/bold] {_fmt(milestone['current'])} / "
+            f"{_fmt(milestone['target'])}｜进度 {milestone['progress_pct']:.1f}%｜"
+            f"距离目标还差 {_fmt(milestone['remaining'])}"
+        )
+
+    options = rep.get("options_monitor") or []
+    if options:
+        console.rule("持仓期权")
+        ot = Table(show_header=True, header_style="bold")
+        for col in (
+            "代码",
+            "方向",
+            "到期",
+            "剩余天",
+            "行权价",
+            "标的现价",
+            "实值/虚值",
+            "权利金变动%",
+        ):
+            ot.add_column(col)
+        for o in options:
+            money = "-"
+            if o["moneyness_pct"] is not None:
+                money = f"{'实值' if o['is_itm'] else '虚值'} {o['moneyness_pct']:.1f}%"
+            flags = []
+            if o["near_expiry"]:
+                flags.append("临近到期")
+            if o["assignment_watch"]:
+                flags.append("实值空头call·留意指派")
+            flag_txt = f" [yellow]({', '.join(flags)})[/yellow]" if flags else ""
+            pct = o["premium_change_pct"]
+            ot.add_row(
+                o["code"] + flag_txt,
+                "空" if o["direction"] == "SHORT" else "多",
+                o["expiry"],
+                str(o["days_to_expiry"]),
+                _fmt(o["strike"], 2),
+                _fmt(o["underlying_price"], 2) if o["underlying_price"] else "-",
+                money,
+                f"{pct:+.1f}%" if pct is not None else "-",
+            )
+        console.print(ot)
+        console.print(
+            "[dim]以上为逐笔合约的到期日/实虚值/权利金变动等事实数据，"
+            "不包含是否平仓或展期的建议——这是需要你自己判断的交易决策。"
+        )
+
     console.rule("观察")
     for o in obs:
         style = "yellow" if o.level == "warn" else "cyan"
