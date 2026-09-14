@@ -11,6 +11,7 @@ from . import corporate, equity, metrics, portfolio, trades
 from . import fees as fees_mod
 from .fx import FX, currency_for_code
 from .instruments import underlying_of
+from .options_monitor import open_option_positions
 from .pnl import fifo_round_trips, open_lots
 
 
@@ -124,6 +125,13 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
         if m:
             per_position_risk[code] = m
 
+    # Only the underlyings behind currently open option positions are needed
+    # here -- not the full deal history, which per_position_risk below already
+    # covers separately for every held code.
+    option_underlyings = {underlying_of(c) for c in pos.get("code", []) if underlying_of(c) != c}
+    klines_by_code = {u: repo.klines(db, u) for u in option_underlyings}
+    options = open_option_positions(pos, klines_by_code)
+
     acct = equity.account_equity(snaps, fx, a.base_currency)
     pf = portfolio.summary(pos, fx, a.concentration_warn)
     bh = _with_net_of_fees(trades.behavior(trips, dls, fx), fee_stats)
@@ -163,4 +171,6 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
         else [],
         "position_risk": per_position_risk,
         "reconciliation": reconciliation,
+        "options_monitor": options,
+        "milestone": equity.milestone_progress(net, getattr(a, "net_asset_milestone", None), fx),
     }

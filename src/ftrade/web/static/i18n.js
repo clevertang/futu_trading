@@ -45,6 +45,15 @@ window.I18N = {
     obsMsg_data_integrity: "Local FIFO disagrees with the broker for {codes} -- history may be incomplete, or a split/spin-off is involved. Try `ftrade sync --full`.",
     obsMsg_drawdown: "Max drawdown over the snapshot window: {maxDrawdown}.",
 
+    optionsMonitor: "Options monitor", optionsMonitorHint: "Days to expiry, moneyness and premium decay for every open contract",
+    optionsMonitorNote: "Facts about each contract's expiry, moneyness and premium change -- not a recommendation to close or roll. That call is yours.",
+    cDirection: "Side", cExpiry: "Expiry", cDTE: "DTE", cStrike: "Strike", cUnderlyingPx: "Underlying",
+    cMoneyness: "Moneyness", cPremiumChg: "Premium chg.", itm: "ITM", otm: "OTM",
+    nearExpiry: "Near expiry", assignmentWatch: "ITM short call - assignment watch",
+    long: "Long", short: "Short",
+    milestoneHint: "A personal target you set yourself -- tracked as a fact, not a recommendation to act on it",
+    milestoneProgress: "{current} of {target} ({pct}%)", milestoneRemaining: "{n} remaining",
+
     marketValue: "Market value", holdingsSub: "{n} holdings · {e} effective",
     unrealized: "Unrealized P&L", realized: "Realized P&L",
     roundTripsSub: "{n} round trips", winRate: "Win rate",
@@ -130,6 +139,15 @@ window.I18N = {
     obsMsg_data_integrity: "本地 FIFO 推算持仓与券商不一致（{codes}），历史成交可能没拉全或含拆股/红股，可以试试 ftrade sync --full。",
     obsMsg_drawdown: "快照区间最大回撤 {maxDrawdown}。",
 
+    optionsMonitor: "期权到期监控", optionsMonitorHint: "每份持仓合约的到期天数、实虚值与权利金变动",
+    optionsMonitorNote: "以上是每份合约到期日、实虚值、权利金变动的事实数据——不包含是否平仓或展期的建议，这是你自己的交易决策。",
+    cDirection: "方向", cExpiry: "到期", cDTE: "剩余天", cStrike: "行权价", cUnderlyingPx: "标的现价",
+    cMoneyness: "实虚值", cPremiumChg: "权利金变动", itm: "实值", otm: "虚值",
+    nearExpiry: "临近到期", assignmentWatch: "实值空头call·留意指派",
+    long: "多", short: "空",
+    milestoneHint: "你自己设定的个人目标——这里只做事实追踪，不建议这个计划是否合理或该不该现在行动",
+    milestoneProgress: "{current} / {target}（{pct}%）", milestoneRemaining: "还差 {n}",
+
     marketValue: "总市值", holdingsSub: "{n} 只持仓 · 有效 {e}",
     unrealized: "浮动盈亏", realized: "累计已实现",
     roundTripsSub: "{n} 笔完整交易", winRate: "胜率",
@@ -212,6 +230,15 @@ window.I18N = {
     obsMsg_frequency: "月平均 {perMonth} 件の約定。低頻度戦略とは言えない水準で、摩擦コストに注意してください。",
     obsMsg_data_integrity: "ローカル FIFO 推計と証券会社の残高が {codes} で一致しません。履歴が不完全か、分割・スピンオフの可能性があります。ftrade sync --full を試してください。",
     obsMsg_drawdown: "スナップショット期間中の最大ドローダウン: {maxDrawdown}。",
+
+    optionsMonitor: "オプション満期モニター", optionsMonitorHint: "保有中の各契約の残存日数・実質/名目・プレミアム変動",
+    optionsMonitorNote: "各契約の満期・実質/名目・プレミアム変動という事実データです。決済や乗り換えの推奨ではありません——それはご自身の判断です。",
+    cDirection: "売買", cExpiry: "満期", cDTE: "残存日数", cStrike: "権利行使価格", cUnderlyingPx: "原資産価格",
+    cMoneyness: "実質/名目", cPremiumChg: "プレミアム変動", itm: "ITM", otm: "OTM",
+    nearExpiry: "満期間近", assignmentWatch: "ITMの売り建てコール・権利行使に注意",
+    long: "買い", short: "売り",
+    milestoneHint: "ご自身で設定した個人的な目標です。事実として進捗を追跡するのみで、計画の妥当性や実行タイミングを提案するものではありません",
+    milestoneProgress: "{current} / {target}（{pct}%）", milestoneRemaining: "残り {n}",
 
     marketValue: "評価額", holdingsSub: "{n} 銘柄 · 実質 {e}",
     unrealized: "評価損益", realized: "実現損益累計",

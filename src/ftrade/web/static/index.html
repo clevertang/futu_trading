@@ -138,6 +138,10 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
       <div class="tw"><table class="num" id="t-capital"></table></div>
       <p class="dispo-note" id="capital-note" style="border-top:none;padding-top:10px"></p>
     </section>
+    <section style="margin-bottom:14px" id="milestone-wrap" hidden>
+      <h2 id="milestone-title"></h2><p class="hint" data-t="milestoneHint"></p>
+      <div class="dispo num" id="milestone-body"></div>
+    </section>
     <div class="grid two">
       <section>
         <h2 data-t="realizedCurve"></h2><p class="hint" data-t="realizedCurveHint"></p>
@@ -209,9 +213,14 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
         <div class="bars num" id="bycode2"></div>
       </section>
     </div>
-    <section>
+    <section style="margin-bottom:14px">
       <h2 data-t="positions"></h2><p class="hint" data-t="positionsHint"></p>
       <div class="tw"><table class="num" id="t-pos"></table></div>
+    </section>
+    <section id="options-wrap" hidden>
+      <h2 data-t="optionsMonitor"></h2><p class="hint" data-t="optionsMonitorHint"></p>
+      <div class="tw"><table class="num" id="t-options"></table></div>
+      <p class="dispo-note" data-t="optionsMonitorNote"></p>
     </section>
   </div>
 
@@ -510,6 +519,52 @@ function renderAll() {
     { t: "cDd", f: r => { const m = risks[r.code]; return m ? pct(m.drawdown_from_peak, 1) : "-"; },
       c: r => { const m = risks[r.code]; return m ? dir(m.drawdown_from_peak) : ""; } },
   ], pf.holdings_detail || []);
+
+  // options monitor -- facts only, see optionsMonitorNote for why
+  const opts = rep.options_monitor || [];
+  const optWrap = document.getElementById("options-wrap");
+  optWrap.hidden = !opts.length;
+  if (opts.length) {
+    const flagsOf = o => [o.near_expiry && T("nearExpiry"), o.assignment_watch && T("assignmentWatch")]
+      .filter(Boolean);
+    table(document.getElementById("t-options"), [
+      { t: "cCode", f: r => {
+          const flags = flagsOf(r);
+          return esc(r.code) + (flags.length ? ` (${esc(flags.join(", "))})` : "");
+        }, l: 1, cls: "code" },
+      { t: "cDirection", f: r => r.direction === "SHORT" ? T("short") : T("long") },
+      { t: "cExpiry", f: r => r.expiry, l: 1 },
+      { t: "cDTE", f: r => r.days_to_expiry, c: r => r.near_expiry ? "down" : "" },
+      { t: "cStrike", f: r => fmt(r.strike, 2) },
+      { t: "cUnderlyingPx", f: r => r.underlying_price != null ? fmt(r.underlying_price, 2) : "-" },
+      { t: "cMoneyness", f: r => r.moneyness_pct == null ? "-"
+          : `${r.is_itm ? T("itm") : T("otm")} ${r.moneyness_pct.toFixed(1)}%`,
+        c: r => r.is_itm ? "down" : "" },
+      { t: "cPremiumChg", f: r => r.premium_change_pct != null
+          ? (r.premium_change_pct >= 0 ? "+" : "") + r.premium_change_pct.toFixed(1) + "%" : "-",
+        c: r => dir(r.premium_change_pct) },
+    ], opts);
+  }
+
+  // milestone -- a personal target, tracked as fact only
+  const ms = rep.milestone;
+  const msWrap = document.getElementById("milestone-wrap");
+  msWrap.hidden = !ms;
+  if (ms) {
+    document.getElementById("milestone-title").textContent = ms.label || T("milestoneHint");
+    const w = Math.min(ms.progress_pct, 100);
+    document.getElementById("milestone-body").innerHTML = `
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px">
+        <span>${esc(fill("milestoneProgress", {
+          current: compact(ms.current), target: compact(ms.target), pct: ms.progress_pct,
+        }))}</span>
+        ${!ms.reached ? `<span style="color:var(--muted)">${
+          esc(fill("milestoneRemaining", { n: compact(ms.remaining) }))}</span>` : ""}
+      </div>
+      <span class="bar-track" style="height:9px;display:block">
+        <span class="bar-fill" style="left:0;width:${w}%;background:${
+          ms.reached ? css("--up") : css("--accent")}"></span></span>`;
+  }
 
   table(document.getElementById("t-accs"), [
     { t: "cAccount", f: r => esc(r.acc_id), l: 1, cls: "code" },

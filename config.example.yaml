@@ -57,3 +57,10 @@ analysis:
 web:
   host: 127.0.0.1
   port: 8765
+
+  # 个人计划里设定的净资产里程碑（如"到 5 万美元后换成 QQQ"）。
+  # 纯事实追踪，不会自动执行任何操作，也不建议这个计划是否合理。
+  # net_asset_milestone:
+  #   amount: 50000
+  #   currency: USD
+  #   label: "switch TQQQ position to QQQ"
