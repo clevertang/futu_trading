@@ -1,5 +1,7 @@
 """用 Mock 网关跑通 同步 -> 分析 -> 报告 的完整链路。"""
 
+import pytest
+
 from ftrade.advice import observations
 from ftrade.analysis import build_report
 from ftrade.config import load_config
@@ -289,3 +291,36 @@ def test_cash_flow_direction_and_ticker_parsing():
     assert summary["dividends"] == 116.44
     assert summary["dividend_tax"] == -11.64
     assert summary["total"] == 104.80
+
+
+def test_equity_curve_converts_currency_per_row():
+    """Snapshots are stored in whatever base_currency was configured at sync
+    time. A currency change between syncs (or simply requesting a report in a
+    different base than that config) must not silently mix currencies or
+    display the wrong figures unconverted -- this is exactly what happened on
+    the real dashboard: the chart showed raw HKD (~270K) beside cards showing
+    USD (~34K), with no currency label to explain the mismatch.
+    """
+    import pandas as pd
+
+    from ftrade.analysis.fx import FX
+    from ftrade.analysis.metrics import equity_curve
+
+    snaps = pd.DataFrame(
+        [
+            {"snap_date": "2026-09-10", "acc_id": 1, "currency": "HKD", "total_assets": 269701.08},
+            {"snap_date": "2026-09-10", "acc_id": 2, "currency": "HKD", "total_assets": 0.0},
+            {"snap_date": "2026-09-11", "acc_id": 1, "currency": "HKD", "total_assets": 259172.93},
+        ]
+    )
+    fx = FX({"HKD": 1.0, "USD": 7.8}, "HKD").rebase("USD")
+    curve = equity_curve(snaps, fx)
+
+    # Not rounded here -- rounding happens when the report is serialized.
+    assert curve.iloc[0]["total_assets"] == pytest.approx(269701.08 / 7.8)
+    assert curve.iloc[1]["total_assets"] == pytest.approx(259172.93 / 7.8)
+
+    # Without fx, the old (buggy) behaviour is preserved rather than silently
+    # changed again -- callers must opt in by passing fx.
+    raw = equity_curve(snaps, fx=None)
+    assert raw.iloc[0]["total_assets"] == 269701.08
