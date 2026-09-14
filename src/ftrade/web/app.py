@@ -50,9 +50,14 @@ def create_app(cfg) -> FastAPI:
         return (STATIC / "index.html").read_text(encoding="utf-8")
 
     @app.get("/api/report")
-    def api_report(acc_id: int | None = None, base: str | None = None) -> JSONResponse:
+    def api_report(
+        acc_id: int | None = None,
+        base: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> JSONResponse:
         with db() as d:
-            rep = build_report(d, cfg, acc_id, base=base)
+            rep = build_report(d, cfg, acc_id, base=base, start=start, end=end)
         rep["observations"] = [o.__dict__ for o in observations(rep, cfg)]
         return JSONResponse(_clean(rep))
 

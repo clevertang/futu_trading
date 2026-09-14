@@ -7,10 +7,17 @@ import math
 import numpy as np
 import pandas as pd
 
+from .trades import _in_range
+
 TRADING_DAYS = 252
 
 
-def equity_curve(account_snapshots: pd.DataFrame, fx=None) -> pd.DataFrame:
+def equity_curve(
+    account_snapshots: pd.DataFrame,
+    fx=None,
+    start: str | None = None,
+    end: str | None = None,
+) -> pd.DataFrame:
     """按日汇总所有账户的总资产，换算到 fx.base。
 
     Snapshots are stored in whatever `analysis.base_currency` was configured at
@@ -19,10 +26,19 @@ def equity_curve(account_snapshots: pd.DataFrame, fx=None) -> pd.DataFrame:
     `fx` this returns the stored figures unconverted, which is only correct
     when the caller's requested base happens to match the sync-time currency;
     every caller in this codebase should pass `fx`.
+
+    ``start``/``end`` filter by ``snap_date``. Note this re-bases `cum_ret` and
+    `drawdown` to the first snapshot *inside* the window, not the account's
+    inception -- the point of a period view is "how did this stretch go",
+    not a fragment of the all-time curve with the early part clipped off.
     """
     if account_snapshots is None or account_snapshots.empty:
         return pd.DataFrame(columns=["snap_date", "total_assets"])
     snaps = account_snapshots.copy()
+    if start or end:
+        snaps = snaps[_in_range(snaps["snap_date"].astype(str), start, end)]
+        if snaps.empty:
+            return pd.DataFrame(columns=["snap_date", "total_assets"])
     if fx is not None:
         snaps["total_assets"] = [
             fx.to_base(v, c) or 0.0

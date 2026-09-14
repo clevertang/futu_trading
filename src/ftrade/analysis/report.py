@@ -76,7 +76,34 @@ def _with_net_of_fees(behavior: dict, fee_stats: dict) -> dict:
     return behavior
 
 
-def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None = None) -> dict:
+def _recent_trips(trips, start: str | None, end: str | None) -> list[dict]:
+    """The 50 most recently closed round trips, scoped to the same range."""
+    if trips is None or trips.empty:
+        return []
+    t = trips
+    if start or end:
+        t = t[trades._in_range(t["close_time"].astype(str), start, end)]
+    if t.empty:
+        return []
+    return t.sort_values("close_time", ascending=False).head(50).to_dict("records")
+
+
+def build_report(
+    db: Database,
+    cfg,
+    acc_id: int | None = None,
+    base: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict:
+    """Assemble the full report, optionally scoped to [start, end].
+
+    The range applies only to *period* figures -- realised P&L, win rate,
+    turnover, fees, cash flows, the realised/equity curves. Current-state
+    facts (open positions, account equity, the milestone tracker, options
+    monitor, broker reconciliation) always reflect today regardless of the
+    range, because "what do I hold right now" isn't a period question.
+    """
     a = cfg.analysis
     fx = FX(a.fx_rates, a.base_currency).rebase(base) if base else FX(a.fx_rates, a.base_currency)
 
@@ -100,11 +127,13 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
     # before summing; deals carries no currency column of its own.
     dls = dls.assign(currency=dls["code"].map(currency_of)) if not dls.empty else dls
 
-    fee_stats = fees_mod.fee_summary(repo.order_fees(db, acc_id=acc_id), fx)
+    fee_stats = fees_mod.fee_summary(repo.order_fees(db, acc_id=acc_id), fx, start=start, end=end)
     flows = repo.cash_flows(db, acc_id=acc_id)
-    cash_stats = cash_mod.cash_summary(flows, fx)
-    dividends = cash_mod.dividends_by_symbol(flows, fx, set(dls.get("code", [])))
-    curve = metrics.equity_curve(snaps, fx)
+    cash_stats = cash_mod.cash_summary(flows, fx, start=start, end=end)
+    dividends = cash_mod.dividends_by_symbol(
+        flows, fx, set(dls.get("code", [])), start=start, end=end
+    )
+    curve = metrics.equity_curve(snaps, fx, start=start, end=end)
 
     # 本地 FIFO 推算的持仓 vs 券商返回的持仓，对不上通常意味着历史成交没拉全
     lots = open_lots(dls)
@@ -134,7 +163,7 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
 
     acct = equity.account_equity(snaps, fx, a.base_currency)
     pf = portfolio.summary(pos, fx, a.concentration_warn)
-    bh = _with_net_of_fees(trades.behavior(trips, dls, fx), fee_stats)
+    bh = _with_net_of_fees(trades.behavior(trips, dls, fx, start=start, end=end), fee_stats)
     net = acct.get("total_assets")
     pf["holdings_detail"] = equity.net_asset_weights(pf.get("holdings_detail", []), net)
     bh["realized_by_code"] = _merge_unrealized(
@@ -164,11 +193,9 @@ def build_report(db: Database, cfg, acc_id: int | None = None, base: str | None 
         "behavior": bh,
         "fees": fee_stats,
         "cash_flows": cash_stats,
-        "realized_curve": trades.realized_curve(trips, fx),
-        "pnl_distribution": trades.pnl_distribution(trips),
-        "round_trips": trips.sort_values("close_time", ascending=False).head(50).to_dict("records")
-        if not trips.empty
-        else [],
+        "realized_curve": trades.realized_curve(trips, fx, start=start, end=end),
+        "pnl_distribution": trades.pnl_distribution(trips, start=start, end=end),
+        "round_trips": _recent_trips(trips, start, end),
         "position_risk": per_position_risk,
         "reconciliation": reconciliation,
         "options_monitor": options,
