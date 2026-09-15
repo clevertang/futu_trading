@@ -13,12 +13,44 @@ from typing import Any
 
 import pandas as pd
 
+from ..analysis.instruments import option_expiry, underlying_of
 from ..storage import repo
 from ..storage.db import Database
 
 log = logging.getLogger(__name__)
 
 OVERLAP_DAYS = 3  # 回退几天重拉，容忍延迟成交/数据修正
+
+
+def quotable_codes(codes: list[str], as_of: date | None = None) -> list[str]:
+    """Narrow a traded-code list to what a K-line fetch can actually use.
+
+    Two corrections, both of which cost real time on this account:
+
+    An expired option contract returns "Unknown stock" from the quote API --
+    documented, unavoidable, and 674 of the 763 codes ever traded here. Each
+    one was still requested individually against a 60-per-30s limit, close to
+    six minutes of guaranteed failures that a daily cron paid every morning.
+
+    Conversely a name only ever traded through options never appears in the
+    deal feed under its own symbol, so its underlying was never requested at
+    all -- ten of them here, including QQQ and AAPL. Those are exactly the
+    prices needed to say where a strike sat relative to spot, so implied
+    underlyings are pulled in even though they were never traded directly.
+    """
+    as_of = as_of or date.today()
+    keep: set[str] = set()
+    for code in codes:
+        expiry = option_expiry(code)
+        if expiry is None:
+            keep.add(code)  # a plain stock or ETF
+            continue
+        if expiry >= as_of:
+            keep.add(code)  # a live contract still has quotes
+        underlying = underlying_of(code)
+        if underlying and underlying != code:
+            keep.add(underlying)
+    return sorted(keep)
 
 
 def _today() -> str:
@@ -322,7 +354,7 @@ class SyncService:
     # ---------- 行情 ----------
 
     def sync_klines(self, codes: list[str] | None = None) -> int:
-        codes = codes or repo.held_codes(self.db)
+        codes = codes or quotable_codes(repo.held_codes(self.db))
         if not codes:
             return 0
         start = (date.today() - timedelta(days=self.cfg.sync.kline_lookback_days)).isoformat()

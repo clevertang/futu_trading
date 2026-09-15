@@ -35,7 +35,7 @@ class StorageConfig:
 class SyncConfig:
     deals_start: str = "2020-01-01"
     window_days: int = 90
-    kline_lookback_days: int = 400
+    kline_lookback_days: int = 2200
 
 
 @dataclass
