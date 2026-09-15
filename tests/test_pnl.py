@@ -781,3 +781,88 @@ def test_equity_curve_rebases_drawdown_to_the_window_start():
     assert list(scoped["snap_date"]) == ["2024-02-01", "2024-03-01"]
     # re-based to 200 at the window start, not the account's all-time peak
     assert scoped.iloc[-1]["drawdown"] == pytest.approx(-0.25)
+
+
+def test_zero_price_buyback_after_expiry_is_an_expiry_not_a_trade():
+    """Futu books expiries as a zero-price fill from 2025 on; older rows have none."""
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "US.PDD260227C110000",
+                "stock_name": "PDD CALL",
+                "trd_side": "SELL_SHORT",
+                "qty": 1,
+                "price": 1.0,
+                "create_time": "2026-02-20 10:00:00",
+            },
+            # Settlement fill, dated the Saturday after the Friday expiry.
+            {
+                "code": "US.PDD260227C110000",
+                "stock_name": "PDD CALL",
+                "trd_side": "BUY_BACK",
+                "qty": 1,
+                "price": 0.0,
+                "create_time": "2026-02-28 00:00:00",
+            },
+        ]
+    )
+    t = fifo_round_trips(deals, as_of=date(2026, 3, 10))
+
+    assert len(t) == 1
+    assert t.iloc[0]["close_reason"] == "EXPIRY"
+    assert t.iloc[0]["pnl"] == 100.0  # the full premium is kept either way
+
+
+def test_a_real_buy_to_close_stays_a_trade():
+    """Buying the contract back for a non-zero price is a deliberate close."""
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "US.PDD260227C110000",
+                "stock_name": "PDD CALL",
+                "trd_side": "SELL_SHORT",
+                "qty": 1,
+                "price": 1.0,
+                "create_time": "2026-02-20 10:00:00",
+            },
+            {
+                "code": "US.PDD260227C110000",
+                "stock_name": "PDD CALL",
+                "trd_side": "BUY_BACK",
+                "qty": 1,
+                "price": 0.05,
+                "create_time": "2026-02-25 10:00:00",
+            },
+        ]
+    )
+    t = fifo_round_trips(deals, as_of=date(2026, 3, 10))
+
+    assert t.iloc[0]["close_reason"] == "TRADE"
+
+
+def test_zero_price_stock_writeoff_is_not_mistaken_for_an_expiry():
+    """A delisted stock is also closed at zero, but has no expiry to compare against."""
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "US.QTT",
+                "stock_name": "Qutoutiao",
+                "trd_side": "BUY",
+                "qty": 100,
+                "price": 3.0,
+                "create_time": "2022-01-05 10:00:00",
+            },
+            {
+                "code": "US.QTT",
+                "stock_name": "Qutoutiao",
+                "trd_side": "SELL",
+                "qty": 100,
+                "price": 0.0,
+                "create_time": "2023-01-01 00:00:00",
+            },
+        ]
+    )
+    t = fifo_round_trips(deals, as_of=date(2023, 6, 1))
+
+    assert t.iloc[0]["close_reason"] == "TRADE"
+    assert t.iloc[0]["pnl"] == -300.0
