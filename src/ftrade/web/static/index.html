@@ -42,6 +42,9 @@ body{margin:0;background:var(--bg);color:var(--text);
 .seg button:hover{color:var(--text)}
 .seg button[aria-pressed="true"]{background:var(--panel);color:var(--text);font-weight:550;
   box-shadow:var(--shadow)}
+.range-custom{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.range-custom input[type="month"]{font:inherit;font-size:12px;color:var(--text);
+  background:var(--sunk);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
 .tabs{display:flex;gap:2px;max-width:1280px;margin:0 auto;padding:9px 20px 0;overflow-x:auto}
 .tabs button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;
   padding:7px 13px 9px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
@@ -120,6 +123,13 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
   <div class="topbar-in">
     <div class="brand">ftrade<em id="subtitle"></em></div>
     <div class="spacer"></div>
+    <div class="seg" id="range-seg"></div>
+    <div class="range-custom" id="range-custom" hidden>
+      <span data-t="rangeFrom"></span>
+      <input type="month" id="range-start">
+      <span data-t="rangeTo"></span>
+      <input type="month" id="range-end">
+    </div>
     <div class="seg" id="cur-seg"></div>
     <div class="seg" id="lang-seg"></div>
     <div class="meta num" id="meta"></div>
@@ -182,6 +192,13 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
     <section style="margin-bottom:14px">
       <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint3"></p>
       <div class="bars num" id="bycode"></div>
+    </section>
+    <section style="margin-bottom:14px" id="realized-period-wrap" hidden>
+      <h2 data-t="realizedByPeriod"></h2><p class="hint" data-t="realizedByPeriodHint"></p>
+      <div class="grid half" style="margin:0">
+        <div class="tw"><table class="num" id="t-realized-month"></table></div>
+        <div class="tw"><table class="num" id="t-realized-year"></table></div>
+      </div>
     </section>
     <section style="margin-bottom:14px" id="fees-wrap" hidden>
       <h2 data-t="fees"></h2><p class="hint" data-t="feesHint"></p>
@@ -250,6 +267,11 @@ const store = {
 let lang = store.get("ftrade.lang", "en");
 let base = store.get("ftrade.base", "USD");
 let tab = store.get("ftrade.tab", "overview");
+const RANGES = ["all", "ytd", "1m", "3m", "custom"];
+let rangeMode = store.get("ftrade.range", "all");
+if (!RANGES.includes(rangeMode)) rangeMode = "all";
+let rangeStart = store.get("ftrade.rangeStart", ""); // "YYYY-MM", custom mode only
+let rangeEnd = store.get("ftrade.rangeEnd", "");
 let rep = null;
 const charts = {};
 const drawn = new Set();
@@ -297,6 +319,29 @@ function renderObservation(o) {
   return { topic: T("obsTopic_" + o.code), message: fill("obsMsg_" + o.code, fmtFn(o.params || {})) };
 }
 
+// Turns the current range-mode selection into {start, end} date strings for
+// the /api/report query, or nulls for "all" (open-ended both sides). "1m"/
+// "3m" are rolling windows anchored on today, not calendar months, so the
+// dashboard always reads "as of right now" rather than snapping to month
+// boundaries. Custom is deliberately month-grained (matching the two
+// <input type="month"> fields) -- day-level precision was not asked for.
+function resolveRange() {
+  const iso = d => d.toISOString().slice(0, 10);
+  if (rangeMode === "ytd") return { start: `${new Date().getFullYear()}-01-01`, end: null };
+  if (rangeMode === "1m" || rangeMode === "3m") {
+    const d = new Date();
+    d.setMonth(d.getMonth() - (rangeMode === "1m" ? 1 : 3));
+    return { start: iso(d), end: null };
+  }
+  if (rangeMode === "custom") {
+    // A month string sorts fine as a day-level lower bound ("-01"); for the
+    // upper bound "-31" is a safe day-agnostic ceiling since string
+    // comparison never needs the real length of that particular month.
+    return { start: rangeStart ? `${rangeStart}-01` : null, end: rangeEnd ? `${rangeEnd}-31` : null };
+  }
+  return { start: null, end: null };
+}
+
 function table(el, cols, rows) {
   el.innerHTML = "<thead><tr>" + cols.map(c => `<th class="${c.l ? "l" : ""}">${T(c.t)}</th>`).join("") +
     "</tr></thead><tbody>" + (rows.length
@@ -319,6 +364,13 @@ function renderChrome() {
   const avail = (rep && rep.available_currencies) || CURRENCIES;
   document.getElementById("cur-seg").innerHTML = CURRENCIES.filter(c => avail.includes(c)).map(c =>
     `<button data-cur="${c}" aria-pressed="${c === base}">${c}</button>`).join("");
+  document.getElementById("range-seg").title = T("rangeHint");
+  document.getElementById("range-seg").innerHTML = RANGES.map(r =>
+    `<button data-range="${r}" aria-pressed="${r === rangeMode}">${T("range" +
+      { all: "All", ytd: "YTD", "1m": "1M", "3m": "3M", custom: "Custom" }[r])}</button>`).join("");
+  document.getElementById("range-custom").hidden = rangeMode !== "custom";
+  document.getElementById("range-start").value = rangeStart;
+  document.getElementById("range-end").value = rangeEnd;
   document.getElementById("tabs").innerHTML = TABS.map(t =>
     `<button role="tab" data-tab="${t}" aria-selected="${t === tab}">${T("tab" + t[0].toUpperCase() + t.slice(1))}</button>`).join("");
 }
@@ -340,15 +392,34 @@ document.addEventListener("click", e => {
     renderChrome(); if (rep) { renderAll(); }
   } else if (b.dataset.cur && b.dataset.cur !== base) {
     base = b.dataset.cur; store.set("ftrade.base", base); load();
+  } else if (b.dataset.range && b.dataset.range !== rangeMode) {
+    rangeMode = b.dataset.range; store.set("ftrade.range", rangeMode);
+    renderChrome();
+    // Custom needs both month fields filled before it means anything; until
+    // then keep showing the previous range rather than firing an open-ended
+    // "all" fetch that would look like the picker did nothing.
+    if (rangeMode !== "custom" || (rangeStart && rangeEnd)) load();
   } else if (b.dataset.tab) {
     showTab(b.dataset.tab);
   }
+});
+document.getElementById("range-start").addEventListener("change", e => {
+  rangeStart = e.target.value; store.set("ftrade.rangeStart", rangeStart);
+  if (rangeStart && rangeEnd) load();
+});
+document.getElementById("range-end").addEventListener("change", e => {
+  rangeEnd = e.target.value; store.set("ftrade.rangeEnd", rangeEnd);
+  if (rangeStart && rangeEnd) load();
 });
 
 /* ---------- data ---------- */
 function load() {
   document.getElementById("meta").textContent = T("loading");
-  fetch(`/api/report?base=${encodeURIComponent(base)}`)
+  const { start, end } = resolveRange();
+  const qs = new URLSearchParams({ base });
+  if (start) qs.set("start", start);
+  if (end) qs.set("end", end);
+  fetch(`/api/report?${qs}`)
     .then(r => r.json())
     .then(r => {
       if (r.detail) { document.getElementById("err").textContent = r.detail; return; }
@@ -455,6 +526,21 @@ function renderAll() {
   }).join("") || `<div class="empty">${T("noData")}</div>`;
   document.getElementById("bycode").innerHTML = barsHtml;
   document.getElementById("bycode2").innerHTML = barsHtml;
+
+  // realised P&L by month / year (both already scoped to the active range)
+  const byMonth = Object.entries(bh.realized_by_month || {}).sort();
+  const byYear = Object.entries(bh.realized_by_year || {}).sort();
+  document.getElementById("realized-period-wrap").hidden = !byMonth.length;
+  if (byMonth.length) {
+    document.getElementById("t-realized-month").innerHTML =
+      `<thead><tr><th class="l">${T("cMonth")}</th><th>${T("cRealized")}</th></tr></thead><tbody>` +
+      byMonth.map(([m, v]) => `<tr><td class="l">${m}</td><td class="${dir(v)}">${fmt(v)}</td></tr>`).join("") +
+      "</tbody>";
+    document.getElementById("t-realized-year").innerHTML =
+      `<thead><tr><th class="l">${T("cYear")}</th><th>${T("cRealized")}</th></tr></thead><tbody>` +
+      byYear.map(([y, v]) => `<tr><td class="l">${y}</td><td class="${dir(v)}">${fmt(v)}</td></tr>`).join("") +
+      "</tbody>";
+  }
 
   // realised by market
   const mk = bh.realized_by_market || [];

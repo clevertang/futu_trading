@@ -571,3 +571,213 @@ def test_milestone_progress_converts_currency_and_tracks_a_personal_target():
     reached = milestone_progress(82000.0, {"amount": 50000, "currency": "USD"}, fx)
     assert reached["progress_pct"] == 100.0
     assert reached["reached"] is True
+
+
+def test_behavior_scopes_realized_pnl_and_win_rate_to_close_time_range():
+    from ftrade.analysis.trades import behavior
+
+    # A trip opened well before the window but closed inside it counts; one
+    # closed outside the window does not, regardless of pnl sign.
+    trips = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL",
+                "pnl": 100.0,
+                "pnl_pct": 10.0,
+                "currency": "USD",
+                "holding_days": 5,
+                "close_time": "2024-01-15 10:00:00",
+            },
+            {
+                "code": "US.AAPL",
+                "pnl": -50.0,
+                "pnl_pct": -5.0,
+                "currency": "USD",
+                "holding_days": 5,
+                "close_time": "2024-06-01 10:00:00",
+            },
+        ]
+    )
+    full = behavior(trips, pd.DataFrame(), start=None, end=None)
+    scoped = behavior(trips, pd.DataFrame(), start="2024-01-01", end="2024-03-31")
+
+    assert full["round_trips"] == 2
+    assert scoped["round_trips"] == 1
+    assert scoped["realized_pnl"] == 100.0
+    assert scoped["win_rate"] == 1.0
+
+
+def test_behavior_scopes_deal_stats_to_create_time_range():
+    from ftrade.analysis.trades import behavior
+
+    deals = pd.DataFrame(
+        [
+            {"code": "US.AAPL", "qty": 10, "price": 100.0, "create_time": "2024-01-10 09:00:00"},
+            {"code": "US.AAPL", "qty": 10, "price": 100.0, "create_time": "2024-06-10 09:00:00"},
+        ]
+    )
+    scoped = behavior(pd.DataFrame(), deals, start="2024-01-01", end="2024-03-31")
+
+    assert scoped["deal_count"] == 1
+    assert scoped["first_deal"] == scoped["last_deal"] == "2024-01-10"
+
+
+def test_behavior_returns_zero_round_trips_when_range_excludes_everything():
+    from ftrade.analysis.trades import behavior
+
+    trips = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL",
+                "pnl": 1.0,
+                "pnl_pct": 1.0,
+                "currency": "USD",
+                "holding_days": 1,
+                "close_time": "2024-01-01",
+            }
+        ]
+    )
+    scoped = behavior(trips, pd.DataFrame(), start="2025-01-01", end="2025-12-31")
+
+    assert scoped == {"round_trips": 0}
+
+
+def test_realized_by_month_and_year_group_by_close_date():
+    from ftrade.analysis.trades import behavior
+
+    trips = pd.DataFrame(
+        [
+            {
+                "code": "US.AAPL",
+                "pnl": 100.0,
+                "pnl_pct": 1.0,
+                "currency": "USD",
+                "holding_days": 1,
+                "close_time": "2024-01-15",
+            },
+            {
+                "code": "US.AAPL",
+                "pnl": 50.0,
+                "pnl_pct": 1.0,
+                "currency": "USD",
+                "holding_days": 1,
+                "close_time": "2024-01-20",
+            },
+            {
+                "code": "US.AAPL",
+                "pnl": -30.0,
+                "pnl_pct": -1.0,
+                "currency": "USD",
+                "holding_days": 1,
+                "close_time": "2024-02-05",
+            },
+        ]
+    )
+    out = behavior(trips, pd.DataFrame())
+
+    assert out["realized_by_month"] == {"2024-01": 150.0, "2024-02": -30.0}
+    assert out["realized_by_year"] == {"2024": 120.0}
+
+
+def test_realized_curve_respects_close_time_range():
+    from ftrade.analysis.fx import FX
+    from ftrade.analysis.trades import realized_curve
+
+    trips = pd.DataFrame(
+        [
+            {"close_time": "2024-01-05 10:00:00", "pnl": -40.0, "currency": "USD"},
+            {"close_time": "2024-03-02 10:00:00", "pnl": 100.0, "currency": "USD"},
+        ]
+    )
+    fx = FX({"USD": 2.0, "HKD": 1.0}, "HKD")
+
+    scoped = realized_curve(trips, fx, start="2024-03-01", end="2024-03-31")
+
+    assert [c["date"] for c in scoped] == ["2024-03-02"]
+    assert scoped[0]["cum_pnl"] == 200.0  # re-based to the window, not the full history
+
+
+def test_pnl_distribution_respects_close_time_range():
+    from ftrade.analysis.trades import pnl_distribution
+
+    trips = pd.DataFrame(
+        {
+            "pnl_pct": [10.0, -10.0],
+            "close_time": ["2024-01-01", "2024-06-01"],
+        }
+    )
+    scoped = pnl_distribution(trips, bucket_pct=20.0, start="2024-01-01", end="2024-01-31")
+
+    assert sum(b["count"] for b in scoped) == 1
+
+
+def test_cash_summary_and_dividends_respect_clearing_date_range():
+    from ftrade.analysis.cash import cash_summary, dividends_by_symbol
+    from ftrade.analysis.fx import FX
+
+    flows = pd.DataFrame(
+        [
+            {
+                "cashflow_type": "Cash Dividend",
+                "amount": 10.0,
+                "direction": "IN",
+                "currency": "USD",
+                "clearing_date": "2024-01-10",
+                "remark": "AAPL 1.000000 SHARES DIVIDENDS 10.00 USD PER SHARE",
+            },
+            {
+                "cashflow_type": "Cash Dividend",
+                "amount": 20.0,
+                "direction": "IN",
+                "currency": "USD",
+                "clearing_date": "2024-06-10",
+                "remark": "AAPL 1.000000 SHARES DIVIDENDS 20.00 USD PER SHARE",
+            },
+        ]
+    )
+    fx = FX({"USD": 1.0}, "USD")
+
+    scoped_summary = cash_summary(flows, fx, start="2024-01-01", end="2024-03-31")
+    assert scoped_summary["total"] == 10.0
+    assert scoped_summary["by_month"] == {"2024-01": 10.0}
+
+    scoped_dividends = dividends_by_symbol(
+        flows, fx, {"US.AAPL"}, start="2024-01-01", end="2024-03-31"
+    )
+    assert scoped_dividends == {"US.AAPL": 10.0}
+
+
+def test_fee_summary_respects_create_time_range():
+    from ftrade.analysis.fees import fee_summary
+    from ftrade.analysis.fx import FX
+
+    fees = pd.DataFrame(
+        [
+            {"code": "US.AAPL", "fee_amount": 1.0, "currency": "USD", "create_time": "2024-01-10"},
+            {"code": "US.AAPL", "fee_amount": 2.0, "currency": "USD", "create_time": "2024-06-10"},
+        ]
+    )
+    fx = FX({"USD": 1.0}, "USD")
+
+    scoped = fee_summary(fees, fx, start="2024-01-01", end="2024-03-31")
+
+    assert scoped["total"] == 1.0
+    assert scoped["by_month"] == {"2024-01": 1.0}
+
+
+def test_equity_curve_rebases_drawdown_to_the_window_start():
+    from ftrade.analysis.metrics import equity_curve
+
+    snaps = pd.DataFrame(
+        [
+            {"snap_date": "2024-01-01", "total_assets": 100.0, "currency": "USD"},
+            {"snap_date": "2024-02-01", "total_assets": 200.0, "currency": "USD"},
+            {"snap_date": "2024-03-01", "total_assets": 150.0, "currency": "USD"},
+        ]
+    )
+
+    scoped = equity_curve(snaps, fx=None, start="2024-02-01", end="2024-03-31")
+
+    assert list(scoped["snap_date"]) == ["2024-02-01", "2024-03-01"]
+    # re-based to 200 at the window start, not the account's all-time peak
+    assert scoped.iloc[-1]["drawdown"] == pytest.approx(-0.25)

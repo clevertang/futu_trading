@@ -17,6 +17,7 @@ import re
 import pandas as pd
 
 from .fx import FX
+from .trades import _in_range
 
 DIVIDEND_TYPES = ("cash dividend", "dividend")
 TAX_TYPES = ("dividend tax", "withholding tax")
@@ -37,14 +38,26 @@ def ticker_from_remark(remark: str | None) -> str | None:
     return match.group(1) if match else None
 
 
-def dividends_by_symbol(flows: pd.DataFrame, fx: FX, known_codes: set[str]) -> dict[str, float]:
+def dividends_by_symbol(
+    flows: pd.DataFrame,
+    fx: FX,
+    known_codes: set[str],
+    start: str | None = None,
+    end: str | None = None,
+) -> dict[str, float]:
     """Net dividend (payment less withholding tax) per market-prefixed symbol.
 
     Remarks carry a bare ticker, so it is resolved against symbols the account
     has actually traded rather than guessing a market prefix.
+
+    ``start``/``end`` filter by ``clearing_date``, same as ``cash_summary()``.
     """
     if flows is None or flows.empty:
         return {}
+    if start or end:
+        flows = flows[_in_range(flows["clearing_date"].astype(str), start, end)]
+        if flows.empty:
+            return {}
     lookup = {code.split(".", 1)[-1]: code for code in known_codes if "." in code}
     out: dict[str, float] = {}
     for _, row in flows.iterrows():
@@ -59,16 +72,27 @@ def dividends_by_symbol(flows: pd.DataFrame, fx: FX, known_codes: set[str]) -> d
     return out
 
 
-def cash_summary(flows: pd.DataFrame, fx: FX) -> dict:
-    """Totals by kind and year, in the base currency."""
+def cash_summary(
+    flows: pd.DataFrame, fx: FX, start: str | None = None, end: str | None = None
+) -> dict:
+    """Totals by kind and year, in the base currency.
+
+    ``start``/``end`` filter by ``clearing_date`` -- when the cash actually
+    settled, which is what a period cash-flow report means.
+    """
     if flows is None or flows.empty:
         return {"count": 0, "base_currency": fx.base, "by_type": {}, "by_year": {}}
     df = flows.copy()
+    if start or end:
+        df = df[_in_range(df["clearing_date"].astype(str), start, end)]
+        if df.empty:
+            return {"count": 0, "base_currency": fx.base, "by_type": {}, "by_year": {}}
     df["signed"] = [_signed(a, d) for a, d in zip(df["amount"], df.get("direction"), strict=True)]
     df["base"] = [
         fx.to_base(v, c) or 0.0 for v, c in zip(df["signed"], df.get("currency"), strict=True)
     ]
     df["year"] = df["clearing_date"].astype(str).str[:4]
+    df["month"] = df["clearing_date"].astype(str).str[:7]
 
     kinds = df.groupby("cashflow_type")["base"].sum().sort_values()
     dividend = df[df["cashflow_type"].astype(str).str.lower().isin(["cash dividend"])]["base"].sum()
@@ -85,6 +109,11 @@ def cash_summary(flows: pd.DataFrame, fx: FX) -> dict:
         "by_year": {
             str(k): round(float(v), 2)
             for k, v in df.groupby("year")["base"].sum().sort_index().items()
+            if k
+        },
+        "by_month": {
+            str(k): round(float(v), 2)
+            for k, v in df.groupby("month")["base"].sum().sort_index().items()
             if k
         },
     }
