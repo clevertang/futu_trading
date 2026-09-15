@@ -392,3 +392,35 @@ def test_account_equity_handles_a_currency_change_between_syncs():
 
     # 100,000 HKD + (1,000 USD -> 7,800 HKD) = 107,800, not 101,000.
     assert eq["total_assets"] == 107800.0
+
+
+def test_quotable_codes_drops_expired_contracts_and_adds_their_underlyings():
+    from datetime import date
+
+    from ftrade.sync.service import quotable_codes
+
+    codes = [
+        "US.TQQQ",  # traded as stock
+        "US.TQQQ250815C75000",  # expired contract: no quotes exist for it
+        "US.QQQ260918C600000",  # live contract, and QQQ was never traded directly
+        "HK.00700",
+    ]
+    out = quotable_codes(codes, as_of=date(2026, 9, 14))
+
+    # The expired contract is gone; its underlying was already in the list.
+    assert "US.TQQQ250815C75000" not in out
+    # A live contract still quotes, so it stays.
+    assert "US.QQQ260918C600000" in out
+    # The underlying of an option only ever traded as an option gets pulled in,
+    # which is what makes strike-versus-spot computable later.
+    assert "US.QQQ" in out
+    assert set(out) == {"US.TQQQ", "US.QQQ", "US.QQQ260918C600000", "HK.00700"}
+
+
+def test_quotable_codes_keeps_plain_symbols_untouched():
+    from datetime import date
+
+    from ftrade.sync.service import quotable_codes
+
+    codes = ["US.AAPL", "HK.00700", "US.SPY"]
+    assert quotable_codes(codes, as_of=date(2026, 9, 14)) == ["HK.00700", "US.AAPL", "US.SPY"]
