@@ -84,6 +84,28 @@ class RoundTrip:
     close_reason: str = "TRADE"
 
 
+def _settlement_reason(code: str, price: float, ts) -> str:
+    """Tell an expiry settlement apart from a real closing trade.
+
+    Futu started booking expiries as an actual fill -- a zero-price BUY_BACK
+    dated the weekend after expiry -- rather than simply dropping the position.
+    Both conventions are present in the history (106 such fills, all from 2025
+    on), so a contract that ran to expiry looks like a deliberate buy-to-close
+    on the newer rows and like nothing at all on the older ones. Reading those
+    as trades misreports the closing style of every expiry since 2025 and puts
+    them in the wrong bucket of the return distribution, whose whole point is
+    keeping structurally-guaranteed expiry outcomes apart from traded ones.
+
+    The three conditions together are specific enough to be safe: only options
+    have an expiry, so stock writeoffs (also synthesised at zero) never match,
+    and no zero-price fill in this history lands before its own expiry.
+    """
+    expiry = option_expiry(code)
+    if expiry is not None and abs(price) < 1e-9 and ts.date() >= expiry:
+        return "EXPIRY"
+    return "TRADE"
+
+
 def _close_against(
     trips: list,
     book: deque,
@@ -97,6 +119,7 @@ def _close_against(
     ts,
 ) -> None:
     """Consume FIFO lots from one side of the book, recording each pairing."""
+    reason = _settlement_reason(code, price, ts)
     remaining = qty
     while remaining > 1e-9 and book:
         lot = book[0]
@@ -120,7 +143,7 @@ def _close_against(
                 currency=currency,
                 direction=direction,
                 multiplier=multiplier,
-                close_reason="TRADE",
+                close_reason=reason,
             )
         )
         lot[0] -= take
