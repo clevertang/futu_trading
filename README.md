@@ -60,6 +60,20 @@ ftrade sync --full
 | `ftrade report --json reports/r.json` | 组合报告 + 风险观察 |
 | `ftrade serve` | 本地 Web 面板（只监听 127.0.0.1） |
 
+### 每天自动跑一次
+
+`scripts/daily_report.sh` 是给 cron/launchd 用的包装脚本：同步 + 导出当天报告，
+日志写到 `reports/daily.log`。它不会启动 OpenD——OpenD 没在跑就跳过并记一行说明。
+
+```bash
+crontab -e
+# 工作日早上 8:30
+30 8 * * 1-5 /path/to/futu_trading/scripts/daily_report.sh
+```
+
+脚本自带互斥锁：一轮没跑完时下一轮直接跳过，而不是两个进程同时写同一个
+SQLite 文件（这个库曾经就是这么被写坏过一次的）。
+
 ## 结构
 
 ```
