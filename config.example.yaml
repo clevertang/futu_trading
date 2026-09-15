@@ -48,11 +48,18 @@ analysis:
   #   writeoff —— 退市清零；按 date 当天的剩余持仓合成一笔 0 价平仓，
   #             亏损全额计入已实现。金额与 date 无关，date 只影响平仓日期
   corporate_actions: []
+  # date 一律填「除权首日」——也就是第一个已经按除权后价格报价的交易日。
+  # 当天及之后的成交视为已经是除权后口径，只有更早的才会被折算。
+  # 拆股尤其容易差一天：填成拆股前最后一个交易日的话，那天的成交会保留
+  # 旧的行权价，变成一张"深度虚值"的合约，后面所有统计都跟着错。
+  # 校验方法：看原始成交里价格/行权价量级在哪一天发生跳变，date 填跳变后
+  # 的第一天。填错时 ftrade 会打一条 WARNING 指出来。
+  #
   # 示例（请按自己的账户填写，并核对生效日）：
   # corporate_actions:
   #   - {type: rename, from: US.CLA,  to: US.OUST, date: "2021-03-12"}
   #   - {type: rename, from: US.TRXC, to: US.ASXC, date: "2021-04-01"}
-  #   - {type: split,  code: US.TQQQ, ratio: 2,    date: "2025-11-18"}
+  #   - {type: split,  code: US.TQQQ, ratio: 2,    date: "2025-11-19"}
   #   - {type: split,  code: US.QTT,   ratio: 0.1,  date: "2022-06-01"}
   #   - {type: writeoff, code: US.QTT,              date: "2023-01-01"}
 

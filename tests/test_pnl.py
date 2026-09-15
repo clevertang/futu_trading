@@ -866,3 +866,79 @@ def test_zero_price_stock_writeoff_is_not_mistaken_for_an_expiry():
 
     assert t.iloc[0]["close_reason"] == "TRADE"
     assert t.iloc[0]["pnl"] == -300.0
+
+
+def _split_deals():
+    """Fills straddling a 2:1 split: pre-split strikes 110/105, post-split 46."""
+    return pd.DataFrame(
+        [
+            {
+                "code": "US.TQQQ251121C105000",
+                "stock_name": "TQQQ CALL",
+                "trd_side": "SELL_SHORT",
+                "qty": 1,
+                "price": 4.6,
+                "create_time": "2025-11-17 10:00:00",
+            },
+            {
+                "code": "US.TQQQ251121C110000",
+                "stock_name": "TQQQ CALL",
+                "trd_side": "SELL_SHORT",
+                "qty": 1,
+                "price": 0.5,
+                "create_time": "2025-11-18 10:00:00",
+            },
+            {
+                "code": "US.TQQQ251121C46000",
+                "stock_name": "TQQQ CALL",
+                "trd_side": "SELL_SHORT",
+                "qty": 1,
+                "price": 0.9,
+                "create_time": "2025-11-21 10:00:00",
+            },
+        ]
+    )
+
+
+def test_split_date_is_the_ex_date_so_fills_on_it_are_left_alone():
+    """The boundary is exclusive: the ex-date already trades in post-split terms."""
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    out = apply_actions(
+        _split_deals(), [Action(type="split", date="2025-11-19", code="US.TQQQ", ratio=2.0)]
+    )
+    codes = set(out["code"])
+
+    # Both pre-ex-date fills are re-struck at half; the post fill is untouched.
+    assert "US.TQQQ251121C55000" in codes  # 110 -> 55, the fill on the 18th
+    assert "US.TQQQ251121C52500" in codes  # 105 -> 52.5, the fill on the 17th
+    assert "US.TQQQ251121C46000" in codes  # already post-split, unchanged
+
+
+def test_a_split_dated_one_session_early_is_warned_about(caplog):
+    """Dating a split on the last pre-split session silently strands that day's strikes."""
+    import logging
+
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    with caplog.at_level(logging.WARNING, logger="ftrade.analysis.corporate"):
+        out = apply_actions(
+            _split_deals(), [Action(type="split", date="2025-11-18", code="US.TQQQ", ratio=2.0)]
+        )
+
+    # The 18th keeps its pre-split strike -- which is exactly the silent damage.
+    assert "US.TQQQ251121C110000" in set(out["code"])
+    assert any("ex-date is probably a session or two later" in r.message for r in caplog.records)
+
+
+def test_a_correctly_dated_split_warns_about_nothing(caplog):
+    import logging
+
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    with caplog.at_level(logging.WARNING, logger="ftrade.analysis.corporate"):
+        apply_actions(
+            _split_deals(), [Action(type="split", date="2025-11-19", code="US.TQQQ", ratio=2.0)]
+        )
+
+    assert not caplog.records
