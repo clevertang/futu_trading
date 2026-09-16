@@ -81,6 +81,11 @@ def held_codes(db: Database) -> list[str]:
     return sorted(c for c in df["code"].dropna().tolist() if c)
 
 
+def quote_status(db: Database) -> pd.DataFrame:
+    """Per-symbol quote-fetch history: consecutive failures and last outcome."""
+    return db.query("SELECT * FROM quote_status")
+
+
 def order_fees(db: Database, acc_id: int | None = None) -> pd.DataFrame:
     """Fees joined onto their orders, so currency and date come along."""
     sql = (
