@@ -1,5 +1,6 @@
 """用 Mock 网关跑通 同步 -> 分析 -> 报告 的完整链路。"""
 
+import pandas as pd
 import pytest
 
 from ftrade.advice import observations
@@ -424,3 +425,97 @@ def test_quotable_codes_keeps_plain_symbols_untouched():
 
     codes = ["US.AAPL", "HK.00700", "US.SPY"]
     assert quotable_codes(codes, as_of=date(2026, 9, 14)) == ["HK.00700", "US.AAPL", "US.SPY"]
+
+
+class _FlakyQuotes:
+    """Gateway stub whose K-line fetch fails for a named set of symbols."""
+
+    def __init__(self, dead: set[str]):
+        self.dead = dead
+        self.asked: list[str] = []
+
+    def get_klines(self, code, start, end):
+        self.asked.append(code)
+        if code in self.dead:
+            raise RuntimeError(f"获取 {code} 日线 失败：Unknown stock. {code.split('.')[-1]}")
+        return pd.DataFrame(
+            [
+                {
+                    "time_key": "2026-09-15 00:00:00",
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 10,
+                }
+            ]
+        )
+
+
+def _svc(db, gw):
+    from ftrade.config import load_config
+    from ftrade.sync import SyncService
+
+    return SyncService(db, gw, load_config())
+
+
+def test_a_dead_symbol_is_dropped_only_after_repeated_failures(tmp_path):
+    """One failure could be an OpenD hiccup; a streak is a delisting."""
+    from ftrade.storage.db import Database
+    from ftrade.sync.service import DEAD_CODE_FAILURES
+
+    db = Database(tmp_path / "t.db")
+    gw = _FlakyQuotes({"US.QTT"})
+    svc = _svc(db, gw)
+
+    for _ in range(DEAD_CODE_FAILURES):
+        gw.asked.clear()
+        svc.sync_klines(["US.TQQQ", "US.QTT"])
+        assert "US.QTT" in gw.asked  # still being tried while under the threshold
+
+    # Threshold reached: the dead symbol is no longer requested, the live one is.
+    gw.asked.clear()
+    svc.sync_klines(["US.TQQQ", "US.QTT"])
+    assert gw.asked == ["US.TQQQ"]
+    db.close()
+
+
+def test_a_recovered_symbol_clears_its_failure_streak(tmp_path):
+    from ftrade.storage.db import Database
+
+    db = Database(tmp_path / "t.db")
+    gw = _FlakyQuotes({"US.QTT"})
+    svc = _svc(db, gw)
+    svc.sync_klines(["US.QTT"])
+    svc.sync_klines(["US.QTT"])
+
+    gw.dead = set()  # it quotes again
+    svc.sync_klines(["US.QTT"])
+
+    from ftrade.storage import repo
+
+    row = repo.quote_status(db).set_index("code").loc["US.QTT"]
+    assert int(row["fail_count"]) == 0
+    assert row["last_ok_at"]
+    db.close()
+
+
+def test_recording_an_outcome_keeps_the_other_timestamp(tmp_path):
+    """upsert is INSERT OR REPLACE, so a partial write would blank the rest."""
+    from ftrade.storage import repo
+    from ftrade.storage.db import Database
+
+    db = Database(tmp_path / "t.db")
+    gw = _FlakyQuotes(set())
+    svc = _svc(db, gw)
+
+    svc.sync_klines(["US.QTT"])  # succeeds -> last_ok_at set
+    gw.dead = {"US.QTT"}
+    svc.sync_klines(["US.QTT"])  # now fails -> last_failed_at set
+
+    row = repo.quote_status(db).set_index("code").loc["US.QTT"]
+    assert row["last_ok_at"], "the earlier success must survive a later failure"
+    assert row["last_failed_at"]
+    assert int(row["fail_count"]) == 1
+    assert "Unknown stock" in str(row["last_error"])
+    db.close()

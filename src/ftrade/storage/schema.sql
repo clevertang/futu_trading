@@ -134,3 +134,23 @@ CREATE TABLE IF NOT EXISTS cash_flows (
     synced_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cash_flows_acc_date ON cash_flows(acc_id, clearing_date);
+
+-- Per-symbol quote-fetch outcomes, so a symbol that no longer quotes stops
+-- being asked about every morning.
+--
+-- Futu exposes no delisting event -- a dead ticker is only visible as a failed
+-- request ("Unknown stock. QTT"), and 24 of them were being retried on every
+-- sync forever. Rather than match on that error string, which is a broker
+-- implementation detail and would misfire on a localised or reworded message,
+-- this counts *consecutive* failures: a transient OpenD hiccup or a rate-limit
+-- retry never reaches the threshold, while a genuinely dead symbol does within
+-- a few days and then stops costing anything. A success zeroes the count, and
+-- skipped symbols are retried periodically so this stays a soft judgement
+-- rather than a one-way door.
+CREATE TABLE IF NOT EXISTS quote_status (
+    code           TEXT PRIMARY KEY,
+    fail_count     INTEGER NOT NULL DEFAULT 0,
+    last_error     TEXT,
+    last_failed_at TEXT,
+    last_ok_at     TEXT
+);

@@ -21,6 +21,13 @@ log = logging.getLogger(__name__)
 
 OVERLAP_DAYS = 3  # 回退几天重拉，容忍延迟成交/数据修正
 
+# A symbol is treated as no longer quoting after this many *consecutive*
+# failures, which a transient OpenD hiccup or a rate-limit retry never reaches.
+# It is tried again once the cooldown lapses, so a re-listing or a broker-side
+# backfill is eventually picked up rather than written off permanently.
+DEAD_CODE_FAILURES = 3
+DEAD_CODE_RETRY_DAYS = 30
+
 
 def quotable_codes(codes: list[str], as_of: date | None = None) -> list[str]:
     """Narrow a traded-code list to what a K-line fetch can actually use.
@@ -353,10 +360,67 @@ class SyncService:
 
     # ---------- 行情 ----------
 
+    def _live_codes(self, codes: list[str]) -> tuple[list[str], int]:
+        """Drop symbols that have failed often enough to look permanently dead.
+
+        Retried once the cooldown lapses, so a re-listing or a broker-side
+        backfill is picked up eventually rather than never.
+        """
+        status = repo.quote_status(self.db)
+        if status.empty:
+            return codes, 0
+        cutoff = (date.today() - timedelta(days=DEAD_CODE_RETRY_DAYS)).isoformat()
+        dead = {
+            str(r["code"])
+            for _, r in status.iterrows()
+            if int(r["fail_count"] or 0) >= DEAD_CODE_FAILURES
+            and str(r["last_failed_at"] or "")[:10] > cutoff
+        }
+        keep = [c for c in codes if c not in dead]
+        return keep, len(codes) - len(keep)
+
+    def _record_quote(self, code: str, error: str | None) -> None:
+        """Note one fetch outcome. Success clears the streak; failure extends it.
+
+        The whole prior row is read and carried forward because `upsert` is an
+        INSERT OR REPLACE: writing a partial row would blank the columns left
+        out, so a failure would erase the last success and vice versa --
+        exactly the history that makes this table worth reading.
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        prior = self.db.query(
+            "SELECT fail_count, last_error, last_failed_at, last_ok_at "
+            "FROM quote_status WHERE code = ?",
+            [code],
+        )
+        row = {} if prior.empty else prior.iloc[0].to_dict()
+        merged = {
+            "code": code,
+            "fail_count": int(row.get("fail_count") or 0),
+            "last_error": row.get("last_error"),
+            "last_failed_at": row.get("last_failed_at"),
+            "last_ok_at": row.get("last_ok_at"),
+        }
+        if error is None:
+            merged.update(fail_count=0, last_error=None, last_ok_at=now)
+        else:
+            merged.update(
+                fail_count=merged["fail_count"] + 1, last_error=error[:300], last_failed_at=now
+            )
+        self.db.upsert("quote_status", [merged])
+
     def sync_klines(self, codes: list[str] | None = None) -> int:
         codes = codes or quotable_codes(repo.held_codes(self.db))
         if not codes:
             return 0
+        codes, skipped = self._live_codes(codes)
+        if skipped:
+            log.info(
+                "跳过 %d 个长期无行情的标的（连续失败 >= %d 次，%d 天后重试）",
+                skipped,
+                DEAD_CODE_FAILURES,
+                DEAD_CODE_RETRY_DAYS,
+            )
         start = (date.today() - timedelta(days=self.cfg.sync.kline_lookback_days)).isoformat()
         end = _today()
         total = 0
@@ -365,7 +429,9 @@ class SyncService:
                 df = self.gw.get_klines(code, start, end)
             except Exception as exc:  # 单个标的失败不影响整体
                 log.warning("拉取 %s 日线失败：%s", code, exc)
+                self._record_quote(code, str(exc))
                 continue
+            self._record_quote(code, None)
             if df is None or df.empty:
                 continue
             rows = [
