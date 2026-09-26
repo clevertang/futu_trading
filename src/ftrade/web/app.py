@@ -42,6 +42,26 @@ def create_app(cfg) -> FastAPI:
     app = FastAPI(title="ftrade", docs_url="/api/docs")
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
+    @app.middleware("http")
+    async def _no_stale_cache(request, call_next):
+        """Force revalidation on every response, static files included.
+
+        StaticFiles sends Last-Modified and ETag but no Cache-Control, which
+        leaves browsers free to apply heuristic freshness and keep serving a
+        cached copy for a while after the file changes on disk. That happened
+        here: new i18n keys landed, and a tab went on rendering the raw key
+        names from a stale i18n.js. The report data never went stale -- it is
+        read from SQLite per request -- so the page looked simply broken
+        rather than old, which is the confusing failure mode.
+
+        `no-cache` rather than `no-store`: the ETag still works, so an
+        unchanged file costs a 304 and no body, while a changed one can never
+        be served from cache.
+        """
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
     def db() -> Database:
         return Database(cfg.db_path)
 
