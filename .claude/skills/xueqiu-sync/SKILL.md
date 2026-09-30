@@ -78,8 +78,10 @@ scripts/share_snapshot.sh START END reports/xueqiu/NAME.png
 
 `share_snapshot.sh` renders the dashboard in share mode (period figures only,
 exact dates in the banner, today's state hidden) at 2× through headless
-Chrome with a throwaway profile. It takes **two to three minutes per image
-and is not hung** — run it in the background. `reports/` is gitignored.
+Chrome with a throwaway profile. Headless Chrome here is slow and sometimes
+never exits, so each call is capped (`CALL_TIMEOUT_S`, default 240) and
+retried (`ATTEMPTS`, default 3): allow several minutes and run it in the
+background. `reports/` is gitignored.
 
 Look at the image before using it: confirm the banner dates and that the
 headline figure equals the fact sheet's.
@@ -116,13 +118,42 @@ TQQQ 600股，上面卖了……
 ### 6. Review, then save as draft
 
 Show the complete title, body, image path and the list of `【】`
-placeholders in chat. Only after the owner approves:
+placeholders in chat. Only after the owner approves, write it in the
+long-form editor, which **autosaves to drafts** — there is no save button:
 
-1. In Chrome, open https://xueqiu.com and use 发帖 (long-form if the body
-   needs it).
-2. Fill title and body; attach the image with the file-upload tool.
-3. Save as draft (草稿 / 存草稿). Confirm it appears in the drafts list.
-4. Close the tabs you opened.
+1. Open https://mp.xueqiu.com/writeV2/?position=pc_creator_post (创作者中心 →
+   发布长文). The editor has only 预览 and **发布**; never click 发布.
+2. **Wait for the editor to finish loading** (take a screenshot) before
+   typing. Text typed straight after navigation is silently dropped — that
+   once produced an untitled, image-only draft.
+3. Click the title box (use its ref from `find`, "请输入标题") and type the
+   title. Enter does **not** move to the body — it keeps typing into the
+   title. Titles have a length cap: the editor shows
+   `标题已超出N个字，无法发布`; shorten until it disappears.
+4. Reach the body by script, not by clicking: screenshots of this page can
+   come back tiled (four half-size copies), and then pixel coordinates miss.
+   The body is the single `.ProseMirror` element:
+
+   ```js
+   const pm = document.querySelector('.ProseMirror'); pm.focus();
+   const r = document.createRange(); r.selectNodeContents(pm); r.collapse(false);
+   getSelection().removeAllRanges(); getSelection().addRange(r);
+   ```
+
+   Then type, one paragraph per `Enter` (a second `Enter` leaves a large
+   gap); plain text only, the editor does not render Markdown. After typing,
+   read `document.querySelector('.ProseMirror').innerText` back and compare
+   it with the approved draft — do not trust the type action alone.
+5. Upload the image **last**, through the first `type=file` input (the
+   toolbar image button) with the file-upload tool — it lands at the cursor.
+   Placing the cursor before an existing image does not work, so do not
+   upload first. Xueqiu watermarks it with the account name.
+6. Wait for `已经保存至草稿` and the `草稿 (N)` counter to go up, then open
+   https://mp.xueqiu.com/draft/long and confirm the title is listed as 未发布.
+7. Close the tabs you opened.
+
+A draft that went wrong is not deleted; reopen it with 修改 and fix it, and
+tell the owner.
 
 ## Notes
 
