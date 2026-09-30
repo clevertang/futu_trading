@@ -50,13 +50,15 @@ def test_incremental_sync_is_idempotent(tmp_path):
 def test_big_ints_survive_the_json_boundary():
     from ftrade.web.app import _clean
 
-    # Real Futu account ids are 18 digits -- past JavaScript's 2**53-1, where
-    # JSON.parse silently rewrites the trailing digits.
-    acc = 281756480175496435
+    # Futu account ids are 18 digits -- past JavaScript's 2**53-1, where
+    # JSON.parse silently rewrites the trailing digits. Synthetic on purpose:
+    # any value above 2**53 exercises the path, and a real one has no place
+    # in a public repository.
+    acc = 123456789012345678
     out = _clean({"accounts": [{"acc_id": acc, "qty": 1200}], "nested": [[acc]]})
 
-    assert out["accounts"][0]["acc_id"] == "281756480175496435"
-    assert out["nested"][0][0] == "281756480175496435"
+    assert out["accounts"][0]["acc_id"] == "123456789012345678"
+    assert out["nested"][0][0] == "123456789012345678"
     assert out["accounts"][0]["qty"] == 1200  # small ints stay numeric
 
 
