@@ -116,6 +116,12 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
 .foot{color:var(--faint);font-size:11px;margin-top:22px;line-height:1.8}
 .err{color:var(--down);padding:14px 0}
 [hidden]{display:none!important}
+
+/* ---- share mode (?share=1): a period report that is safe to screenshot ---- */
+body.share #range-seg, body.share #range-custom, body.share #cur-seg, body.share #lang-seg,
+body.share #tabs, body.share [data-live], body.share [data-noshare]{display:none!important}
+body.share .grid.two{grid-template-columns:1fr}
+body.share .meta{text-align:left;font-size:12px}
 </style>
 </head>
 <body>
@@ -143,27 +149,27 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
   <!-- ============ Overview ============ -->
   <div id="tab-overview" role="tabpanel">
     <div class="cards num" id="cards"></div>
-    <section style="margin-bottom:14px" id="capital-wrap" hidden>
+    <section style="margin-bottom:14px" id="capital-wrap" data-live hidden>
       <h2 data-t="capital"></h2><p class="hint" data-t="capitalHint"></p>
       <div class="tw"><table class="num" id="t-capital"></table></div>
       <p class="dispo-note" id="capital-note" style="border-top:none;padding-top:10px"></p>
     </section>
-    <section style="margin-bottom:14px" id="milestone-wrap" hidden>
+    <section style="margin-bottom:14px" id="milestone-wrap" data-live hidden>
       <h2 id="milestone-title"></h2><p class="hint" data-t="milestoneHint"></p>
       <div class="dispo num" id="milestone-body"></div>
     </section>
     <div class="grid two">
       <section>
-        <h2 data-t="realizedCurve"></h2><p class="hint" data-t="realizedCurveHint"></p>
+        <h2 data-t="realizedCurve"></h2><p class="hint" data-t="realizedCurveHint" data-t-share="realizedCurveHintShare"></p>
         <div class="chart tall"><canvas id="c-realized"></canvas></div>
       </section>
-      <section>
+      <section data-live>
         <h2 data-t="equity"></h2><p class="hint" data-t="equityHint"></p>
         <div class="chart tall" id="equity-box"><canvas id="c-equity"></canvas></div>
         <div class="empty" id="equity-empty" hidden></div>
       </section>
     </div>
-    <section>
+    <section data-live>
       <h2 data-t="observations"></h2><p class="hint" data-t="observationsHint"></p>
       <ul class="obs" id="obs"></ul>
     </section>
@@ -190,7 +196,7 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
       <div class="tw"><table class="num" id="t-market"></table></div>
     </section>
     <section style="margin-bottom:14px">
-      <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint3"></p>
+      <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint3" data-t-share="byCodeHintShare"></p>
       <div class="bars num" id="bycode"></div>
     </section>
     <section style="margin-bottom:14px" id="realized-period-wrap" hidden>
@@ -212,7 +218,9 @@ td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px
       <p class="dispo-note" data-t="feesNote"></p>
       <p class="dispo-note" id="dividends-note" hidden></p>
     </section>
-    <section>
+    <!-- Trade-level log: correct for the period, but fifty rows turn a
+         shareable summary into a scroll; left to the interactive view. -->
+    <section data-noshare>
       <h2 data-t="trips"></h2><p class="hint" data-t="tripsHint"></p>
       <div class="tw"><table class="num" id="t-trips"></table></div>
     </section>
@@ -264,8 +272,21 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
 };
 
-let lang = store.get("ftrade.lang", "en");
-let base = store.get("ftrade.base", "USD");
+// Share mode renders a single period as a report meant to be screenshotted
+// and published. Everything is taken from the URL rather than localStorage,
+// so the same link always produces the same page, and nothing that describes
+// the account *today* (net assets, open P&L, leverage, milestone) appears
+// next to figures for a past period -- a reader would otherwise take a
+// September net-asset figure as the result of the period in the title.
+const SHARE = (() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get("share") !== "1") return null;
+  return { start: q.get("start"), end: q.get("end"), lang: q.get("lang"), base: q.get("base") };
+})();
+if (SHARE) document.body.classList.add("share");
+
+let lang = (SHARE && SHARE.lang) || store.get("ftrade.lang", "en");
+let base = (SHARE && SHARE.base) || store.get("ftrade.base", "USD");
 let tab = store.get("ftrade.tab", "overview");
 const RANGES = ["all", "ytd", "1m", "3m", "custom"];
 let rangeMode = store.get("ftrade.range", "all");
@@ -326,6 +347,9 @@ function renderObservation(o) {
 // boundaries. Custom is deliberately month-grained (matching the two
 // <input type="month"> fields) -- day-level precision was not asked for.
 function resolveRange() {
+  // Share links carry exact dates, so a period can start on the day the last
+  // published report left off instead of being rounded to a month boundary.
+  if (SHARE) return { start: SHARE.start || null, end: SHARE.end || null };
   const iso = d => d.toISOString().slice(0, 10);
   if (rangeMode === "ytd") return { start: `${new Date().getFullYear()}-01-01`, end: null };
   if (rangeMode === "1m" || rangeMode === "3m") {
@@ -357,7 +381,9 @@ function renderChrome() {
   document.documentElement.lang = lang;
   document.getElementById("subtitle").textContent = "· " + T("subtitle");
   document.getElementById("foot").textContent = T("footer");
-  document.querySelectorAll("[data-t]").forEach(el => { el.textContent = T(el.dataset.t); });
+  document.querySelectorAll("[data-t]").forEach(el => {
+    el.textContent = T(SHARE && el.dataset.tShare ? el.dataset.tShare : el.dataset.t);
+  });
 
   document.getElementById("lang-seg").innerHTML = Object.keys(window.I18N).map(l =>
     `<button data-lang="${l}" aria-pressed="${l === lang}">${window.I18N[l]._name}</button>`).join("");
@@ -435,19 +461,24 @@ function load() {
 function renderAll() {
   const pf = rep.portfolio || {}, bh = rep.behavior || {}, cur = rep.base_currency || "";
 
-  document.getElementById("meta").innerHTML =
-    `${T("snapshot")} <b>${rep.snapshot_date || "-"}</b>　${T("syncedAt")} <b>${rep.last_sync_at || "-"}</b><br>` +
-    `${T("dealRange")} <b>${bh.first_deal || "-"}</b> → <b>${bh.last_deal || "-"}</b>`;
+  document.getElementById("meta").innerHTML = SHARE
+    ? `${T("shareRange")} <b>${esc(SHARE.start || "-")}</b> → <b>${esc(SHARE.end || "-")}</b>　` +
+      `${T("shareBasis")}<br>${fill("shareGenerated", { t: esc(rep.generated_at || "-") })}`
+    : `${T("snapshot")} <b>${rep.snapshot_date || "-"}</b>　${T("syncedAt")} <b>${rep.last_sync_at || "-"}</b><br>` +
+      `${T("dealRange")} <b>${bh.first_deal || "-"}</b> → <b>${bh.last_deal || "-"}</b>`;
 
   const eq = rep.equity || {};
   const cards = [];
-  if (eq.total_assets != null) {
+  if (eq.total_assets != null && !SHARE) {
     cards.push([T("netAssets"), fmt(eq.total_assets), "",
       eq.is_leveraged ? fill("netAssetsSub", { n: compact(Math.abs(eq.cash || 0)) }) : cur]);
   }
   cards.push(...[
-    [T("marketValue"), fmt(pf.market_value), "", fill("holdingsSub", { n: pf.holdings ?? 0, e: pf.effective_positions ?? "-" })],
-    [T("unrealized"), fmt(pf.unrealized_pl), dir(pf.unrealized_pl), cur],
+    // Market value and open P&L describe today's holdings, not the period.
+    ...(SHARE ? [] : [
+      [T("marketValue"), fmt(pf.market_value), "", fill("holdingsSub", { n: pf.holdings ?? 0, e: pf.effective_positions ?? "-" })],
+      [T("unrealized"), fmt(pf.unrealized_pl), dir(pf.unrealized_pl), cur],
+    ]),
     [T("realized"), fmt(bh.realized_pnl), dir(bh.realized_pnl), fill("roundTripsSub", { n: bh.round_trips ?? 0 })],
     ...(bh.realized_pnl_net != null
       ? [[T("realizedNet"), fmt(bh.realized_pnl_net), dir(bh.realized_pnl_net),
@@ -507,15 +538,21 @@ function renderAll() {
     } ${fill("medianHold", { n: bh.median_holding_days ?? "-" })}</p>`;
 
   // P&L by symbol (rendered into both tabs)
-  const byCode = bh.realized_by_code || [];
+  // Each row's `total` folds in today's open P&L, which has no place in a
+  // report for a past period. Share mode ranks on realised P&L plus the
+  // period's dividends (both range-scoped) and drops names that only appear
+  // because they are held now.
+  const val = s => (SHARE ? (s.pnl || 0) + (s.dividends || 0) : (s.total != null ? s.total : s.pnl));
+  const byCode = SHARE
+    ? (bh.realized_by_code || []).filter(s => val(s) !== 0).sort((a, b) => val(b) - val(a))
+    : (bh.realized_by_code || []);
   const top = byCode.slice(0, 5), bottom = byCode.slice(-5).reverse();
   const shown = [...top, ...bottom.filter(b => !top.some(t => t.code === b.code))];
-  const val = s => (s.total != null ? s.total : s.pnl);
   const peak = Math.max(...shown.map(s => Math.abs(val(s))), 1);
   const barsHtml = shown.map(s => {
     const v = val(s), w = Math.abs(v) / peak * 50, neg = v < 0;
     const parts = [`${T("cRealized")} ${fmt(s.pnl)}`];
-    if (s.unrealized) parts.push(`${T("cUnrealizedCol")} ${fmt(s.unrealized)}`);
+    if (s.unrealized && !SHARE) parts.push(`${T("cUnrealizedCol")} ${fmt(s.unrealized)}`);
     if (s.dividends) parts.push(`${T("cDividends")} ${fmt(s.dividends)}`);
     if (parts.length > 1) parts.push(`${T("cTotalCol")} ${fmt(v)}`);
     return `<div class="bar-row"><span class="nm" title="${esc(s.code)}">${esc(s.code)}</span>
@@ -687,7 +724,21 @@ function renderAll() {
   drawn.clear();
   Object.values(charts).forEach(c => c.destroy());
   Object.keys(charts).forEach(k => delete charts[k]);
-  showTab(tab);
+  if (SHARE) {
+    // One page, no tabs: the period panels stacked, the holdings and account
+    // panels (today's state, account numbers) left out entirely.
+    TABS.forEach(t => { document.getElementById("tab-" + t).hidden = !["overview", "trading"].includes(t); });
+    drawCharts("overview");
+    drawCharts("trading");
+    // Publish the rendered height once charts have settled, so a headless
+    // renderer (scripts/share_snapshot.sh) can size its viewport to the page
+    // instead of padding the image with blank space or cropping it.
+    requestAnimationFrame(() => setTimeout(() => {
+      document.body.dataset.height = String(document.documentElement.scrollHeight);
+    }, 400));
+  } else {
+    showTab(tab);
+  }
 }
 
 /* ---------- charts ---------- */
