@@ -10,7 +10,7 @@ from . import cash as cash_mod
 from . import corporate, equity, metrics, portfolio, trades
 from . import fees as fees_mod
 from .fx import FX, currency_for_code
-from .instruments import underlying_of
+from .instruments import parse_option, underlying_of
 from .options_monitor import open_option_positions
 from .pnl import fifo_round_trips, open_lots
 
@@ -149,6 +149,11 @@ def build_report(
 
     per_position_risk = {}
     for code in pos["code"].tolist() if not pos.empty else []:
+        # Volatility and drawdown of an option's own premium series are not a
+        # position's risk in the sense the holdings table means; computed
+        # anyway they came out at 2,576% and 4,562% for short weeklies.
+        if parse_option(code):
+            continue
         kl = repo.klines(db, code)
         m = metrics.position_volatility(kl)
         if m:

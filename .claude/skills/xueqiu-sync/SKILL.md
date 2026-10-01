@@ -73,8 +73,18 @@ post's text and say which way you resolved it.
 
 ```bash
 python scripts/xueqiu_facts.py --start START --end END
-scripts/share_snapshot.sh START END reports/xueqiu/NAME.png
+scripts/share_snapshot.sh START END reports/xueqiu/NAME.png      # period image
+scripts/share_snapshot.sh holdings reports/xueqiu/holdings-DATE.png  # 当前持仓 image
 ```
+
+**Every post ends with a 当前持仓 section**, at the owner's request: the
+fact sheet's section 3 as text, headed with its snapshot date (`当前持仓（10
+月 1 日）：`), and the holdings image under it. The holdings view shows
+capital, weights, positions and options as of the latest snapshot and
+nothing from any period, so it can follow period figures without being
+mistaken for them. Sync first, or it shows yesterday. Summary posts carry two
+images (period, then holdings); per-operation posts usually only the
+holdings one, since a one-day period image is nearly empty.
 
 `share_snapshot.sh` renders the dashboard in share mode (period figures only,
 exact dates in the banner, today's state hidden) at 2× through headless
@@ -99,7 +109,7 @@ From the owner's 24 posts (2024-07 → 2025-05):
 - **Candid about losses and mistakes** (`中概确实决策失误`); do not soften.
 - Often opens with 当前持仓如下 / 昨日操作 and ends with the plan
   (`今晚计划……`) — the plan is the owner's to write: placeholder.
-- One image, the share-mode snapshot.
+- Images: the holdings snapshot always; the period snapshot for summaries.
 
 Per-operation skeleton:
 
