@@ -74,3 +74,44 @@ def test_one_settlement_explains_only_one_delivery():
         ]
     )
     assert [k for _, k in out] == ["exercised", "assignment", "order"]
+
+
+def test_a_delivery_without_a_settlement_fill_is_matched_to_the_expired_short():
+    """Before 2025 Futu booked no zero-price close; only the weekend delivery remained."""
+    history = _fills(
+        [
+            ("US.NVDA250530C130000", "SELL_SHORT", 1, 2.76, "2025-05-12 11:24:00"),
+            ("US.NVDA", "SELL", 100, 130.0, "2025-06-01 19:47:00"),
+        ]
+    )
+    period = history.iloc[[1]]
+    fills = facts.label_fills(period, history)
+
+    assert fills[0]["kind"] == "assignment"
+    assert fills[0]["from_opt"]["strike"] == 130.0
+
+
+def test_a_sale_at_a_strike_long_after_that_expiry_stays_an_order():
+    history = _fills(
+        [
+            ("US.NVDA250530C130000", "SELL_SHORT", 1, 2.76, "2025-05-12 11:24:00"),
+            ("US.NVDA", "SELL", 100, 130.0, "2025-07-15 10:00:00"),
+        ]
+    )
+    fills = facts.label_fills(history.iloc[[1]], history)
+
+    assert fills[0]["kind"] == "order"
+
+
+def test_a_put_delivers_shares_in_not_out():
+    """A short put's exercise is a BUY at the strike; a SELL there is unrelated."""
+    history = _fills(
+        [
+            ("US.TQQQ261002P73000", "SELL_SHORT", 1, 1.06, "2026-09-23 10:23:00"),
+            ("US.TQQQ", "SELL", 100, 73.0, "2026-10-04 19:00:00"),
+            ("US.TQQQ", "BUY", 100, 73.0, "2026-10-04 19:00:00"),
+        ]
+    )
+    fills = facts.label_fills(history.iloc[[1, 2]], history)
+
+    assert [f["kind"] for f in fills] == ["order", "assignment"]

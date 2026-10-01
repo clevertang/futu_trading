@@ -155,6 +155,23 @@ long-form editor, which **autosaves to drafts** — there is no save button:
 A draft that went wrong is not deleted; reopen it with 修改 and fix it, and
 tell the owner.
 
+**Editing a paragraph in an existing draft** (e.g. filling a `【】`
+placeholder):
+
+- **Never type over a selection.** Doing so silently drops every ASCII
+  character — digits, Latin letters, `%`, `-` — and keeps only the Chinese;
+  `4,051` vanished and the garbled text autosaved.
+- Select the paragraph with a real triple-click (its ref from `find`, or
+  coordinates from a fresh screenshot), confirm with
+  `getSelection().toString()`, press `Delete`, confirm the paragraph is now
+  empty, then type on the empty line and read it back.
+- A selection set by script is not honoured by key presses; keys need a real
+  click first. If a click lands on the wrong paragraph, `cmd+z` undoes it.
+- Edit bottom-up when changing several paragraphs, so earlier positions do
+  not shift.
+- When the same reasoning would appear in more than one post, say it once and
+  refer back (`看好的逻辑上一篇说过`) rather than repeating it.
+
 ## Notes
 
 - The dashboard's share mode is `/?share=1&start=YYYY-MM-DD&end=YYYY-MM-DD&lang=zh&base=USD`.

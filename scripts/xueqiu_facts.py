@@ -38,13 +38,16 @@ SIDE = {"BUY": "买入", "SELL": "卖出", "SELL_SHORT": "卖出开仓", "BUY_BA
 # How far apart an option's settlement and the resulting share delivery can be
 # booked and still be read as one exercise.
 ASSIGN_WINDOW_S = 10 * 60
+# Without a settlement fill, how long after expiry a delivery at the strike is
+# still read as that contract's exercise (expiry Friday, booked Sunday, here).
+DELIVERY_LAG_DAYS = 7
 
 
 def _money(v) -> str:
     return "-" if v is None else f"{float(v):+,.2f}"
 
 
-def label_fills(deals) -> list[dict]:
+def label_fills(deals, history=None) -> list[dict]:
     """Classify each fill: a real order, an option settlement, or an assignment.
 
     Futu books the end of an option position as a zero-price closing fill --
@@ -55,6 +58,15 @@ def label_fills(deals) -> list[dict]:
     the same underlying, at the strike, within a few minutes: paired means
     exercised, unpaired means it lapsed. The stock fill is then not an order
     the person placed, and must not be described as one.
+
+    Before 2025 Futu booked no settlement fill at all -- the option simply
+    vanished -- so an exercise left only the share delivery, typically on a
+    weekend (NVDA: 100 shares "sold" at 130 on Sunday 2025-06-01, right after
+    a short 130 call expired on the Friday). For those, `history` (all fills,
+    so a contract opened before the period still counts) is searched for a
+    short option on the same underlying, struck at the fill price, that
+    expired within the preceding week, with a matching direction: a short
+    call delivers shares away (SELL), a short put delivers them in (BUY).
     """
     rows = deals.to_dict("records")
     for r in rows:
@@ -78,6 +90,26 @@ def label_fills(deals) -> list[dict]:
             ):
                 s["kind"], r["kind"] = "exercised", "assignment"
                 break
+
+    shorts = []  # contracts written at some point, from the whole history
+    for h in (history if history is not None else deals).to_dict("records"):
+        opt = parse_option(h["code"])
+        if opt and h["trd_side"] == "SELL_SHORT":
+            shorts.append(opt)
+    for r in rows:
+        if r["opt"] or r["kind"] != "order":
+            continue
+        day = r["ts"].date()
+        want = {"SELL": "CALL", "BUY": "PUT"}.get(r["trd_side"])
+        for opt in shorts:
+            if (
+                opt["underlying"] == r["code"]
+                and opt["kind"] == want
+                and abs(float(opt["strike"]) - float(r["price"] or 0)) < 1e-6
+                and 0 <= (day - opt["expiry"]).days <= DELIVERY_LAG_DAYS
+            ):
+                r["kind"], r["from_opt"] = "assignment", opt
+                break
     return rows
 
 
@@ -95,7 +127,13 @@ def describe(f: dict) -> str:
         return f"- {t}　{name} ×{qty:g} {when}（非主动操作）"
     if f["kind"] == "assignment":
         verb = "行权交割卖出" if f["trd_side"] == "SELL" else "行权交割买入"
-        return f"- {t}　{name} {qty:g}{unit} @ {px:g} **{verb}**（上一行期权的结果，非主动操作）"
+        src = f.get("from_opt")
+        why = (
+            f"{src['expiry']} 到期的 {src['strike']:g} {src['kind']} 被行权"
+            if src
+            else "上一行期权的结果"
+        )
+        return f"- {t}　{name} {qty:g}{unit} @ {px:g} **{verb}**（{why}，非主动操作）"
     return f"- {t}　{SIDE.get(f['trd_side'], f['trd_side'])} {name} {qty:g}{unit} @ {px:g}"
 
 
@@ -110,6 +148,7 @@ def main() -> None:
     with Database(cfg.db_path) as db:
         rep = build_report(db, cfg, base=args.base, start=args.start, end=args.end)
         fills = repo.deals(db, start=args.start, end=args.end + " 23:59:59")
+        history = repo.deals(db)
         pos = repo.positions(db)
         snap = repo.latest_snapshot_date(db)
 
@@ -144,7 +183,7 @@ def main() -> None:
     if fills.empty:
         print("- 无")
     else:
-        for f in label_fills(fills.sort_values("create_time")):
+        for f in label_fills(fills.sort_values("create_time"), history):
             print(describe(f))
 
     print(f"\n## 3. 当前持仓（{snap} 快照，是**今天**的状态，不是区间结果）\n")
