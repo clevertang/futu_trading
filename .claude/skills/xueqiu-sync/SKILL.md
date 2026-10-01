@@ -152,6 +152,15 @@ long-form editor, which **autosaves to drafts** — there is no save button:
    https://mp.xueqiu.com/draft/long and confirm the title is listed as 未发布.
 7. Close the tabs you opened.
 
+**Publishing** (only when the owner has said so in chat, for those posts):
+the 发布 button does not respond to a ref click. Click it at its position in
+a fresh screenshot's coordinate frame (that frame can differ from the page's
+CSS pixels). Success shows as a redirect to https://mp.xueqiu.com/ — then
+confirm on the profile that the post appears **once** before publishing the
+next. If a click seems to do nothing, check the profile before clicking
+again, so a slow publish is never doubled. Publish in reading order: a post
+that refers to "上一篇" must go after the one it means.
+
 A draft that went wrong is not deleted; reopen it with 修改 and fix it, and
 tell the owner.
 

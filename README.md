@@ -62,14 +62,21 @@ ftrade sync --full
 
 ### 每天自动跑一次
 
-`scripts/daily_report.sh` 是给 cron/launchd 用的包装脚本：同步 + 导出当天报告，
+`scripts/daily_report.sh` 是定时任务用的包装脚本：同步 + 导出当天报告，
 日志写到 `reports/daily.log`。它不会启动 OpenD——OpenD 没在跑就跳过并记一行说明。
 
+用 launchd 定在工作日早上 8:30：
+
 ```bash
-crontab -e
-# 工作日早上 8:30
-30 8 * * 1-5 /path/to/futu_trading/scripts/daily_report.sh
+scripts/install_launchd.sh            # 安装/重装
+scripts/install_launchd.sh run        # 立即按 launchd 的方式跑一次
+scripts/install_launchd.sh status     # 看状态和上次退出码
+scripts/install_launchd.sh uninstall  # 卸载
 ```
+
+不用 cron 的原因：机器在 8:30 睡着时 cron 直接跳过、永不补跑，而每漏一次就
+永久少一天的持仓和净值快照（成交下次同步能补回，快照补不回）。launchd 会在
+机器醒来后补跑一次；关机状态下仍然跑不了。
 
 脚本自带互斥锁：一轮没跑完时下一轮直接跳过，而不是两个进程同时写同一个
 SQLite 文件（这个库曾经就是这么被写坏过一次的）。
