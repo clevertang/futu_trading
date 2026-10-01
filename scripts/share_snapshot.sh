@@ -1,12 +1,17 @@
 #!/bin/bash
-# Render one period of the dashboard (share mode) to a PNG, for publishing.
+# Render the dashboard's share mode to a PNG, for publishing.
 #
 #   scripts/share_snapshot.sh START END OUT.png [lang] [base] [port]
-#   scripts/share_snapshot.sh 2025-05-12 2025-12-31 reports/xueqiu/2025H2.png
+#   scripts/share_snapshot.sh holdings OUT.png [lang] [base] [port]
 #
-# Share mode shows only figures that belong to the period -- nothing about the
-# account as it stands today -- so the image can sit under a title like
-# "2025 H2 summary" without misleading anyone. Needs `ftrade serve` running.
+#   scripts/share_snapshot.sh 2025-05-12 2025-12-31 reports/xueqiu/2025H2.png
+#   scripts/share_snapshot.sh holdings reports/xueqiu/holdings.png
+#
+# A period image shows only figures that belong to the period -- nothing about
+# the account as it stands today -- so it can sit under a title like "2025 H2
+# summary" without misleading anyone. The holdings image is the opposite:
+# today's positions, options and capital as of the latest snapshot, for a
+# post's 当前持仓 section. Needs `ftrade serve` running.
 #
 # Uses a throwaway Chrome profile so the person's own browser session is never
 # touched, and asks the page for its rendered height first so the image is
@@ -22,20 +27,30 @@ set -euo pipefail
 CALL_TIMEOUT_S=${CALL_TIMEOUT_S:-240}
 ATTEMPTS=${ATTEMPTS:-3}
 
-if [ $# -lt 3 ]; then
-  sed -n '4,5p' "$0" >&2
-  exit 2
-fi
+usage() { sed -n '4,5p' "$0" >&2; exit 2; }
 
-START=$1
-END=$2
-OUT=$3
-LANG_=${4:-zh}
-BASE=${5:-USD}
-PORT=${6:-8791}
+if [ "${1:-}" = "holdings" ]; then
+  [ $# -ge 2 ] || usage
+  OUT=$2
+  LANG_=${3:-zh}
+  BASE=${4:-USD}
+  PORT=${5:-8791}
+  QUERY="view=holdings"
+  WHAT="holdings"
+else
+  [ $# -ge 3 ] || usage
+  START=$1
+  END=$2
+  OUT=$3
+  LANG_=${4:-zh}
+  BASE=${5:-USD}
+  PORT=${6:-8791}
+  QUERY="start=${START}&end=${END}"
+  WHAT="${START} -> ${END}"
+fi
 WIDTH=1280
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-URL="http://127.0.0.1:${PORT}/?share=1&start=${START}&end=${END}&lang=${LANG_}&base=${BASE}"
+URL="http://127.0.0.1:${PORT}/?share=1&${QUERY}&lang=${LANG_}&base=${BASE}"
 
 [ -x "$CHROME" ] || { echo "Google Chrome not found at $CHROME" >&2; exit 1; }
 curl -sf -o /dev/null "http://127.0.0.1:${PORT}/" \
@@ -89,4 +104,4 @@ for i in $(seq 1 "$ATTEMPTS"); do
   echo "screenshot: attempt $i/$ATTEMPTS produced nothing, retrying" >&2
 done
 [ -s "$OUT" ] || { echo "screenshot was not written" >&2; exit 1; }
-echo "$OUT  ${START} -> ${END}  ${WIDTH}x${HEIGHT} @2x"
+echo "$OUT  ${WHAT}  ${WIDTH}x${HEIGHT} @2x"

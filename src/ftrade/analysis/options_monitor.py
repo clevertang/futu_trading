@@ -44,23 +44,34 @@ def open_option_positions(
 ) -> list[dict]:
     """One row per open option contract, with no directional advice attached.
 
-    `klines_by_code` supplies the underlying's latest close for moneyness --
-    the option's own `nominal_price` in `positions` is the option's own mark,
-    not the underlying's, and a short PDD call written against long PDD calls
-    (no PDD shares held) has no other source for the underlying's price.
+    The underlying's price for moneyness comes from the same snapshot as the
+    positions when the underlying is itself held -- the broker's mark, the
+    figure the holdings table shows beside it. Otherwise it falls back to the
+    latest daily close in `klines_by_code` (a short PDD call written against
+    long PDD calls, no shares held, has no other source). Using the daily
+    close even when the mark exists put two different prices for one stock on
+    the same page: TQQQ at 80.46 in the holdings table and 78.03 here, which
+    called an in-the-money call 2.5% out of the money.
     """
     as_of = as_of or date.today()
     if positions is None or positions.empty:
         return []
 
+    marks = {
+        str(r["code"]): float(r["nominal_price"])
+        for _, r in positions.iterrows()
+        if not parse_option(r["code"]) and r.get("nominal_price")
+    }
     rows = []
     for _, r in positions.iterrows():
         parsed = parse_option(r["code"])
         if not parsed or float(r["qty"] or 0) == 0:
             continue
         dte = (parsed["expiry"] - as_of).days
-        kl = klines_by_code.get(parsed["underlying"])
-        underlying_px = float(kl["close"].iloc[-1]) if kl is not None and not kl.empty else None
+        underlying_px = marks.get(parsed["underlying"])
+        if underlying_px is None:
+            kl = klines_by_code.get(parsed["underlying"])
+            underlying_px = float(kl["close"].iloc[-1]) if kl is not None and not kl.empty else None
 
         entry = float(r["cost_price"] or 0)
         current = float(r["nominal_price"] or 0)

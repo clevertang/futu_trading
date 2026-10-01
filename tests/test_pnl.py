@@ -983,3 +983,42 @@ def test_early_exercise_counts_with_settlements_in_the_distribution():
 
     assert buckets[-1]["expiry"] == 2 and buckets[-1]["trade"] == 0
     assert sum(b["trade"] for b in buckets) == 1
+
+
+def test_moneyness_uses_the_held_underlyings_mark_over_the_daily_close():
+    """One page, one price: the holdings table and the options table must agree."""
+    import pandas as pd
+
+    from ftrade.analysis.options_monitor import open_option_positions
+
+    positions = pd.DataFrame(
+        [
+            {"code": "US.TQQQ", "qty": 600.0, "cost_price": 80.03, "nominal_price": 80.46},
+            {
+                "code": "US.TQQQ261016C80000",
+                "qty": -2.0,
+                "cost_price": 1.95,
+                "nominal_price": 2.70,
+            },
+        ]
+    )
+    stale = {"US.TQQQ": pd.DataFrame({"close": [78.03]})}
+    row = open_option_positions(positions, stale, as_of=date(2026, 10, 1))[0]
+
+    assert row["underlying_price"] == 80.46
+    assert row["is_itm"] is True  # 80.46 > 80; the daily close would have said OTM
+
+
+def test_moneyness_falls_back_to_the_daily_close_when_the_underlying_is_not_held():
+    import pandas as pd
+
+    from ftrade.analysis.options_monitor import open_option_positions
+
+    positions = pd.DataFrame(
+        [{"code": "US.PDD280121C70000", "qty": 6.0, "cost_price": 24.2, "nominal_price": 20.4}]
+    )
+    row = open_option_positions(
+        positions, {"US.PDD": pd.DataFrame({"close": [77.94]})}, as_of=date(2026, 10, 1)
+    )[0]
+
+    assert row["underlying_price"] == 77.94

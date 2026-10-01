@@ -122,6 +122,10 @@ body.share #range-seg, body.share #range-custom, body.share #cur-seg, body.share
 body.share #tabs, body.share [data-live], body.share [data-noshare]{display:none!important}
 body.share .grid.two{grid-template-columns:1fr}
 body.share .meta{text-align:left;font-size:12px}
+/* view=holdings: today's state, nothing from a period */
+body.share.holdings [data-noholdings]{display:none!important}
+body.share.holdings #capital-wrap:not([hidden]){display:block!important}
+body.share.holdings #tab-positions .grid.half{grid-template-columns:1fr}
 </style>
 </head>
 <body>
@@ -233,7 +237,7 @@ body.share .meta{text-align:left;font-size:12px}
         <h2 data-t="weights"></h2><p class="hint" data-t="weightsHint"></p>
         <div class="chart"><canvas id="c-weights"></canvas></div>
       </section>
-      <section>
+      <section data-noholdings>
         <h2 data-t="byCode"></h2><p class="hint" data-t="byCodeHint3"></p>
         <div class="bars num" id="bycode2"></div>
       </section>
@@ -281,9 +285,14 @@ const store = {
 const SHARE = (() => {
   const q = new URLSearchParams(location.search);
   if (q.get("share") !== "1") return null;
-  return { start: q.get("start"), end: q.get("end"), lang: q.get("lang"), base: q.get("base") };
+  return {
+    start: q.get("start"), end: q.get("end"), lang: q.get("lang"), base: q.get("base"),
+    // "holdings" renders today's positions instead of a period's results --
+    // the 当前持仓 section a post carries alongside its period figures.
+    view: q.get("view") === "holdings" ? "holdings" : "period",
+  };
 })();
-if (SHARE) document.body.classList.add("share");
+if (SHARE) document.body.classList.add("share", SHARE.view);
 
 let lang = (SHARE && SHARE.lang) || store.get("ftrade.lang", "en");
 let base = (SHARE && SHARE.base) || store.get("ftrade.base", "USD");
@@ -461,7 +470,11 @@ function load() {
 function renderAll() {
   const pf = rep.portfolio || {}, bh = rep.behavior || {}, cur = rep.base_currency || "";
 
-  document.getElementById("meta").innerHTML = SHARE
+  document.getElementById("meta").innerHTML = SHARE && SHARE.view === "holdings"
+    ? `${T("shareHoldings")} <b>${esc(rep.snapshot_date || "-")}</b>　` +
+      `${T("syncedAt")} <b>${esc(rep.last_sync_at || "-")}</b><br>` +
+      `${fill("shareGenerated", { t: esc(rep.generated_at || "-") })}`
+    : SHARE
     ? `${T("shareRange")} <b>${esc(SHARE.start || "-")}</b> → <b>${esc(SHARE.end || "-")}</b>　` +
       `${T("shareBasis")}<br>${fill("shareGenerated", { t: esc(rep.generated_at || "-") })}`
     : `${T("snapshot")} <b>${rep.snapshot_date || "-"}</b>　${T("syncedAt")} <b>${rep.last_sync_at || "-"}</b><br>` +
@@ -727,9 +740,14 @@ function renderAll() {
   if (SHARE) {
     // One page, no tabs: the period panels stacked, the holdings and account
     // panels (today's state, account numbers) left out entirely.
-    TABS.forEach(t => { document.getElementById("tab-" + t).hidden = !["overview", "trading"].includes(t); });
-    drawCharts("overview");
-    drawCharts("trading");
+    const panels = SHARE.view === "holdings" ? ["positions"] : ["overview", "trading"];
+    TABS.forEach(t => { document.getElementById("tab-" + t).hidden = !panels.includes(t); });
+    if (SHARE.view === "holdings") {
+      // Net assets and exposure frame the positions below them; both are
+      // today's figures, which is exactly what this view states it shows.
+      document.getElementById("tab-positions").prepend(document.getElementById("capital-wrap"));
+    }
+    panels.forEach(drawCharts);
     // Publish the rendered height once charts have settled, so a headless
     // renderer (scripts/share_snapshot.sh) can size its viewport to the page
     // instead of padding the image with blank space or cropping it.
