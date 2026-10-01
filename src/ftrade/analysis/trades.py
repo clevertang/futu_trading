@@ -6,6 +6,10 @@ import pandas as pd
 
 from .instruments import market_of, underlying_of
 
+# close_reason values that mean the position ended by settlement, not by a
+# fill the owner chose (see pnl._settlement_reason).
+SETTLEMENT_REASONS = ("EXPIRY", "EXERCISED")
+
 
 def _in_range(dates: pd.Series, start: str | None, end: str | None) -> pd.Series:
     """Boolean mask: date string (YYYY-MM-DD, or longer with a timestamp) falls
@@ -231,6 +235,9 @@ def pnl_distribution(
     lo, hi = -100.0, 100.0
     df["clamped"] = df["pnl_pct"].clip(lo, hi)
     reason = df.get("close_reason", pd.Series("TRADE", index=df.index)).fillna("TRADE")
+    # An early exercise settles at zero like an expiry and fixes the outcome
+    # the same way (the whole premium), so it belongs with the settlements.
+    settled = reason.isin(SETTLEMENT_REASONS)
 
     steps = int(round((hi - lo) / bucket_pct))
     out = []
@@ -244,8 +251,8 @@ def pnl_distribution(
                 "left": left,
                 "right": right,
                 "count": int(hit.sum()),
-                "expiry": int((hit & (reason == "EXPIRY")).sum()),
-                "trade": int((hit & (reason != "EXPIRY")).sum()),
+                "expiry": int((hit & settled).sum()),
+                "trade": int((hit & ~settled).sum()),
             }
         )
     return out

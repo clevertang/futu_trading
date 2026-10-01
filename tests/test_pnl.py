@@ -942,3 +942,44 @@ def test_a_correctly_dated_split_warns_about_nothing(caplog):
         )
 
     assert not caplog.records
+
+
+def test_zero_price_close_before_expiry_is_an_early_exercise():
+    """Nothing trades at 0.00 and a contract cannot lapse early: it was exercised."""
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "US.TQQQ260925C73000",
+                "stock_name": "TQQQ CALL",
+                "trd_side": "SELL_SHORT",
+                "qty": 1,
+                "price": 0.81,
+                "create_time": "2026-09-14 11:32:00",
+            },
+            # Early assignment: settled two days before the 09-25 expiry.
+            {
+                "code": "US.TQQQ260925C73000",
+                "stock_name": "TQQQ CALL",
+                "trd_side": "BUY_BACK",
+                "qty": 1,
+                "price": 0.0,
+                "create_time": "2026-09-23 01:23:00",
+            },
+        ]
+    )
+    t = fifo_round_trips(deals, as_of=date(2026, 9, 30))
+
+    assert t.iloc[0]["close_reason"] == "EXERCISED"
+    assert t.iloc[0]["pnl"] == 81.0  # the premium is kept either way
+
+
+def test_early_exercise_counts_with_settlements_in_the_distribution():
+    from ftrade.analysis.trades import pnl_distribution
+
+    trips = pd.DataFrame(
+        {"pnl_pct": [100.0, 100.0, 10.0], "close_reason": ["EXPIRY", "EXERCISED", "TRADE"]}
+    )
+    buckets = pnl_distribution(trips, bucket_pct=20.0)
+
+    assert buckets[-1]["expiry"] == 2 and buckets[-1]["trade"] == 0
+    assert sum(b["trade"] for b in buckets) == 1

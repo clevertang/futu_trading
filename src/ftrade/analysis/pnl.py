@@ -96,14 +96,22 @@ def _settlement_reason(code: str, price: float, ts) -> str:
     them in the wrong bucket of the return distribution, whose whole point is
     keeping structurally-guaranteed expiry outcomes apart from traded ones.
 
-    The three conditions together are specific enough to be safe: only options
-    have an expiry, so stock writeoffs (also synthesised at zero) never match,
-    and no zero-price fill in this history lands before its own expiry.
+    Only options have an expiry, so stock writeoffs (also synthesised at zero)
+    never match.
+
+    A zero-price close *before* expiry is not a trade either -- nothing fills
+    at 0.00 in the market -- and cannot be a lapse, so it is an early
+    exercise: for a short, early assignment. This happened in the history
+    (TQQQ260925C73000, closed at zero on 09-23, two days early, shares
+    delivered a minute later) after an earlier version of this docstring had
+    asserted it never did, and it was being reported as a TRADE. At or after
+    expiry the fill alone cannot say whether the contract lapsed or was
+    exercised, so both stay EXPIRY.
     """
     expiry = option_expiry(code)
-    if expiry is not None and abs(price) < 1e-9 and ts.date() >= expiry:
-        return "EXPIRY"
-    return "TRADE"
+    if expiry is None or abs(price) >= 1e-9:
+        return "TRADE"
+    return "EXPIRY" if ts.date() >= expiry else "EXERCISED"
 
 
 def _close_against(
