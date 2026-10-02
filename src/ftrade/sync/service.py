@@ -139,6 +139,10 @@ class SyncService:
             "market_val": _num(info.get("market_val")) or _num(info.get("securities_assets")),
             "power": _num(info.get("power")),
             "risk_status": _text(info.get("risk_status")),
+            "initial_margin": _num(info.get("initial_margin")),
+            "maintenance_margin": _num(info.get("maintenance_margin")),
+            "margin_call_margin": _num(info.get("margin_call_margin")),
+            "exposure_level": _text(info.get("exposure_level")),
             "raw": pd.Series(info).astype(str).to_json(),
             "synced_at": _now(),
         }

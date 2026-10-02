@@ -516,6 +516,14 @@ function renderAll() {
         eq.is_leveraged ? "down" : ""],
       [T("cBuyingPower"), fmt(eq.power), ""],
       [T("cRisk"), eq.risk_status || "-", ""],
+      // Only shown once a snapshot carries them; older databases have none.
+      ...(eq.exposure_level ? [[T("cExposureLevel"), esc(eq.exposure_level),
+        /WARNING|MARGIN_CALL|RESTRICTED/.test(eq.exposure_level) ? "down" : ""]] : []),
+      ...(eq.maintenance_margin != null ? [[T("cMaintenance"), fmt(eq.maintenance_margin), ""]] : []),
+      ...(eq.margin_call_margin != null ? [[T("cMarginCall"), fmt(eq.margin_call_margin), ""]] : []),
+      ...(eq.drop_to_margin_call != null ? [[T("cDropToCall"),
+        fill("dropToCallValue", { n: pct(eq.drop_to_margin_call, 0) }),
+        eq.drop_to_margin_call < 0.15 ? "down" : ""]] : []),
     ];
     document.getElementById("t-capital").innerHTML =
       "<tbody>" + rows.map(([k, v, c]) =>

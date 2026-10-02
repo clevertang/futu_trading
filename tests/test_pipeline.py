@@ -521,3 +521,53 @@ def test_recording_an_outcome_keeps_the_other_timestamp(tmp_path):
     assert int(row["fail_count"]) == 1
     assert "Unknown stock" in str(row["last_error"])
     db.close()
+
+
+def test_drop_to_margin_call_matches_the_closed_form():
+    from ftrade.analysis.equity import drop_to_margin_call
+
+    # 2026-10-02, HKD: market value, net assets, margin-call line.
+    assert drop_to_margin_call(458804, 299336, 183305.8) == pytest.approx(0.4212, abs=1e-4)
+    assert drop_to_margin_call(1000, 1200, 400) is None  # no margin debt
+    assert drop_to_margin_call(1000, 700, None) is None  # requirement not on record
+    assert drop_to_margin_call(1000, 300, 400) == 0.0  # already below the line
+
+
+def test_account_equity_carries_margin_fields_and_treats_missing_as_unknown():
+    from ftrade.analysis.equity import account_equity
+    from ftrade.analysis.fx import FX
+
+    fx = FX({"HKD": 1.0}, "HKD")
+    with_margin = account_equity(
+        pd.DataFrame(
+            [
+                _snapshot(
+                    maintenance_margin=180000.0,
+                    margin_call_margin=180000.0,
+                    initial_margin=200000.0,
+                    exposure_level="MODERATE",
+                )
+            ]
+        ),
+        fx,
+        "HKD",
+    )
+    assert with_margin["maintenance_margin"] == 180000.0
+    assert with_margin["exposure_level"] == "MODERATE"
+    assert with_margin["drop_to_margin_call"] is not None
+
+    older = account_equity(pd.DataFrame([_snapshot()]), fx, "HKD")
+    assert "maintenance_margin" not in older  # unknown, not 0
+    assert older["drop_to_margin_call"] is None
+
+
+def test_sync_records_margin_fields(tmp_path):
+    cfg = load_config()
+    db = Database(tmp_path / "t.db")
+    SyncService(db, MockGateway(cfg), cfg).sync_all(full=True)
+    row = db.query(
+        "SELECT maintenance_margin, margin_call_margin, exposure_level FROM account_snapshots"
+    )
+    db.close()
+    assert row["maintenance_margin"].notna().all()
+    assert (row["exposure_level"] == "SAFE").all()
