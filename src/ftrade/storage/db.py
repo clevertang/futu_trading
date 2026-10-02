@@ -12,6 +12,14 @@ import pandas as pd
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
+# Added to account_snapshots after the table first shipped; see _add_margin_columns.
+MARGIN_COLUMNS = {
+    "initial_margin": "REAL",
+    "maintenance_margin": "REAL",
+    "margin_call_margin": "REAL",
+    "exposure_level": "TEXT",
+}
+
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
@@ -43,7 +51,33 @@ class Database:
 
     def migrate(self) -> None:
         self.conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        self._add_margin_columns()
         self.conn.commit()
+
+    def _add_margin_columns(self) -> None:
+        """Give account_snapshots its margin columns on a database that predates them.
+
+        CREATE TABLE IF NOT EXISTS leaves an existing table alone, so columns
+        added to schema.sql later have to be added here as well. The values
+        are not lost for older rows: every snapshot also stored the broker's
+        full account-info response in `raw`, so they are filled from there.
+        """
+        have = {r[1] for r in self.conn.execute("PRAGMA table_info(account_snapshots)")}
+        added = False
+        for col, kind in MARGIN_COLUMNS.items():
+            if col not in have:
+                self.conn.execute(f"ALTER TABLE account_snapshots ADD COLUMN {col} {kind}")
+                added = True
+        if not added:
+            return
+        for col, kind in MARGIN_COLUMNS.items():
+            value = f"json_extract(raw, '$.{col}')"
+            if kind == "REAL":
+                value = f"CAST(NULLIF({value}, 'N/A') AS REAL)"
+            self.conn.execute(
+                f"UPDATE account_snapshots SET {col} = {value} "
+                f"WHERE {col} IS NULL AND json_valid(raw)"
+            )
 
     def close(self) -> None:
         self.conn.close()

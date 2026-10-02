@@ -166,6 +166,10 @@ class MockGateway:
             "market_val": round(mv, 2),
             "power": cash * 2,
             "risk_status": "LEVEL1",
+            "initial_margin": round(mv * 0.5, 2),
+            "maintenance_margin": round(mv * 0.4, 2),
+            "margin_call_margin": round(mv * 0.4, 2),
+            "exposure_level": "SAFE",
         }
 
     def get_history_deals(self, acc_id: int, start: str, end: str) -> pd.DataFrame:

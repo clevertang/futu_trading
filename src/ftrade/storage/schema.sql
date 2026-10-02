@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS account_snapshots (
     market_val         REAL,
     power              REAL,
     risk_status        TEXT,
+    -- Margin requirements and the broker's exposure level, in `currency`.
+    -- Futu offers no history of margin calls -- no notification, no order
+    -- flag -- so these daily figures are the only record there will be.
+    initial_margin     REAL,
+    maintenance_margin REAL,
+    margin_call_margin REAL,
+    exposure_level     TEXT,
     raw                TEXT,
     synced_at          TEXT,
     PRIMARY KEY (snap_date, acc_id, currency)
