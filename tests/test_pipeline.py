@@ -571,3 +571,21 @@ def test_sync_records_margin_fields(tmp_path):
     db.close()
     assert row["maintenance_margin"].notna().all()
     assert (row["exposure_level"] == "SAFE").all()
+
+
+def test_report_carries_this_year_and_this_month_regardless_of_range(tmp_path):
+    cfg = load_config()
+    db = Database(tmp_path / "t.db")
+    SyncService(db, MockGateway(cfg), cfg).sync_all(full=True)
+
+    full = build_report(db, cfg)["to_date"]
+    scoped = build_report(db, cfg, start="2021-01-01", end="2021-06-30")["to_date"]
+    db.close()
+
+    assert full == scoped  # today-relative, like equity
+    assert full["year"]["since"] == full["as_of"][:4] + "-01-01"
+    assert full["month"]["since"] == full["as_of"][:7] + "-01"
+    for p in (full["year"], full["month"]):
+        assert p["net"] == round(p["realized"] - p["fees"] + p["dividends"], 2)
+    # A single day of snapshots has nothing before either period to start from.
+    assert full["year"]["nav"] is None and full["month"]["nav"] is None

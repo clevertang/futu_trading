@@ -82,7 +82,17 @@ fact sheet's section 3 as text, headed with its snapshot date (`当前持仓（1
 月 1 日）：`), and the holdings image under it. The holdings view shows
 capital, weights, positions and options as of the latest snapshot and
 nothing from any period, so it can follow period figures without being
-mistaken for them. Sync first, or it shows yesterday. Summary posts carry two
+mistaken for them. Sync first, or it shows yesterday.
+
+The section also opens with this year's and this month's result -- the fact
+sheet's section 4, which the holdings image shows as its first panel. The
+owner asked for both on every post. Realised (after fees, with dividends) is
+always there; the net-asset change, which counts open positions, appears
+only for a period with a snapshot from before it began, so 今年 has none
+until 2027. Quote what the sheet prints and say which one it is (已实现 or
+净资产); do not present a realised figure as the account's return.
+
+Summary posts carry two
 images (period, then holdings); per-operation posts usually only the
 holdings one, since a one-day period image is nearly empty.
 
@@ -122,6 +132,7 @@ TQQQ 09-28 80 call 2张到期作废
 【为什么这么做】
 
 当前持仓（MM-DD）：
+今年已实现 +7,681，本月已实现 +270，本月净资产 +8.47%（已扣出入金）
 TQQQ 600股，上面卖了……
 ```
 
