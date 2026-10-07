@@ -2,7 +2,7 @@
 
     python scripts/xueqiu_facts.py --start 2026-09-27 [--end 2026-09-30] [--base USD]
 
-Prints Markdown with three sections:
+Prints Markdown with four sections:
 
 1. Period figures -- the same numbers share mode shows for the same dates,
    because both come from build_report(start=..., end=...).
@@ -12,6 +12,9 @@ Prints Markdown with three sections:
    what the person did, so they are marked as expiry / assignment here.
 3. Positions as of the latest snapshot, with days to expiry and distance from
    spot for each option -- clearly labelled as *today*, not as the period.
+4. This year and this month up to that snapshot (analysis/todate.py), the
+   same figures the holdings image shows. Like section 3 it belongs under
+   the post's 当前持仓 heading.
 
 Read-only: it only queries the local database. It gives no recommendation;
 the post's reasoning is the author's to write.
@@ -208,6 +211,50 @@ def main() -> None:
             f"{opt['strike']:g} {opt['kind']} ×{abs(q):g}，剩 {dte} 天{dist}，"
             f"开仓价 {float(r['cost_price'] or 0):.2f} 现价 {float(r['nominal_price'] or 0):.2f}"
         )
+
+    print(f"\n## 4. 今年 / 本月（截至 {snap}，放在当前持仓一节，持仓图里也有）\n")
+    for line in to_date_lines(rep["to_date"]):
+        print(line)
+
+
+def to_date_lines(td: dict) -> list[str]:
+    """Section 4: the report's `to_date` block, one realised and one
+    net-asset line per period."""
+    lines = []
+    for key, label in (("year", "今年"), ("month", "本月")):
+        p = td.get(key) or {}
+        div = f"，股息（税后）{p['dividends']:+,.2f}" if p.get("dividends") else ""
+        lines.append(
+            f"- {label}已实现 {_money(p.get('net'))}（平仓 {p.get('realized', 0):+,.2f}，"
+            f"费用 {p.get('fees', 0):,.2f}{div}；{p.get('since')} 起）"
+        )
+        nav = p.get("nav")
+        if nav:
+            ext = (
+                f"，期间出入金 {nav['external']:+,.2f} 已扣除"
+                if nav["external"]
+                else "，期间无出入金"
+            )
+            how = (
+                f"按年初持仓重建，年初净资产 {nav['start']:,.2f} 为倒推；"
+                f"浮盈变化 {_money(nav.get('open_pl_change'))}，利息等 {_money(nav.get('other'))}"
+                + (
+                    f"；{'、'.join(nav['carried_at_cost'])} 年初按开仓价计"
+                    if nav.get("carried_at_cost")
+                    else ""
+                )
+                if nav.get("method") == "rebuilt"
+                else f"净资产 {nav['start']:,.2f} → {nav['end']:,.2f}"
+            )
+            lines.append(
+                f"- {label}收益（含浮盈）{_money(nav['pnl'])}（{nav['pct'] * 100:+.2f}%），"
+                f"{nav['from']} → {nav['to']}{ext}。{how}"
+            )
+        else:
+            lines.append(
+                f"- {label}收益（含浮盈）：算不出（{p.get('since')} 之前没有快照，持仓也无法重建）"
+            )
+    return lines
 
 
 if __name__ == "__main__":

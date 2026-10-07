@@ -454,6 +454,46 @@ class SyncService:
         log.info("日线 %d 条（%d 个标的）", total, len(codes))
         return total
 
+    def sync_year_end_prices(self, year: int | None = None) -> int:
+        """Traded close on the last trading day of `year` (default: last year)
+        for each stock held across that year-end, once per symbol and year.
+
+        This year's result starts from that value; `klines` cannot supply it
+        because it is forward-adjusted.
+        """
+        year = year or date.today().year - 1
+        have = set(repo.year_end_prices(self.db, year))
+        # Options are left out: an expired contract has no quote, and one still
+        # open has no traded close here to read either.
+        codes = [
+            c
+            for c in repo.codes_open_before(self.db, f"{year + 1}-01-01")
+            if c not in have and not option_expiry(c)
+        ]
+        rows = []
+        for code in codes:
+            try:
+                df = self.gw.get_klines(code, f"{year}-12-15", f"{year}-12-31", adjusted=False)
+            except Exception as exc:  # delisted or unquotable: leaves the year unvalued
+                log.warning("拉取 %s %d 年末收盘价失败：%s", code, year, exc)
+                continue
+            if df is None or df.empty:
+                continue
+            last = df.sort_values("time_key").iloc[-1]
+            rows.append(
+                {
+                    "code": code,
+                    "year": year,
+                    "close_date": str(last.get("time_key"))[:10],
+                    "close": _num(last.get("close")),
+                    "synced_at": _now(),
+                }
+            )
+        if rows:
+            self.db.upsert("year_end_prices", rows)
+            log.info("%d 年末收盘价 %d 个标的", year, len(rows))
+        return len(rows)
+
     # ---------- 一键 ----------
 
     def _syncable_accounts(self) -> list[int]:
@@ -508,5 +548,6 @@ class SyncService:
             stats["failed"] = failed
         if with_klines:
             stats["klines"] = self.sync_klines()
+            stats["year_end_prices"] = self.sync_year_end_prices()
         self.db.set_state("last_sync_at", _now())
         return stats

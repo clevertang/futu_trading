@@ -7,7 +7,7 @@ from datetime import datetime
 from ..storage import repo
 from ..storage.db import Database
 from . import cash as cash_mod
-from . import corporate, equity, metrics, portfolio, trades
+from . import corporate, equity, metrics, portfolio, todate, trades
 from . import fees as fees_mod
 from .fx import FX, currency_for_code
 from .instruments import parse_option, underlying_of
@@ -127,7 +127,8 @@ def build_report(
     # before summing; deals carries no currency column of its own.
     dls = dls.assign(currency=dls["code"].map(currency_of)) if not dls.empty else dls
 
-    fee_stats = fees_mod.fee_summary(repo.order_fees(db, acc_id=acc_id), fx, start=start, end=end)
+    order_fees = repo.order_fees(db, acc_id=acc_id)
+    fee_stats = fees_mod.fee_summary(order_fees, fx, start=start, end=end)
     flows = repo.cash_flows(db, acc_id=acc_id)
     cash_stats = cash_mod.cash_summary(flows, fx, start=start, end=end)
     dividends = cash_mod.dividends_by_symbol(
@@ -182,9 +183,10 @@ def build_report(
         pf["top1_weight_of_net"] = round(top * mv / net, 4) if top is not None else None
         pf["gross_exposure"] = acct.get("gross_exposure")
 
+    snapshot_date = repo.latest_snapshot_date(db, acc_id)
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "snapshot_date": repo.latest_snapshot_date(db, acc_id),
+        "snapshot_date": snapshot_date,
         "last_sync_at": db.get_state("last_sync_at"),
         "base_currency": fx.base,
         "available_currencies": fx.currencies(),
@@ -204,5 +206,21 @@ def build_report(
         "position_risk": per_position_risk,
         "reconciliation": reconciliation,
         "options_monitor": options,
+        # Today-relative like `equity`: this year and this month to the latest
+        # snapshot, whatever range the rest of the report is scoped to.
+        "to_date": todate.to_date(
+            trips,
+            dls,
+            order_fees,
+            flows,
+            snaps,
+            fx,
+            str(snapshot_date) if snapshot_date else None,
+            positions=pos,
+            year_end=repo.year_end_prices(
+                db, int(str(snapshot_date)[:4]) - 1 if snapshot_date else 0
+            ),
+            currency_of=currency_of,
+        ),
         "milestone": equity.milestone_progress(net, getattr(a, "net_asset_milestone", None), fx),
     }

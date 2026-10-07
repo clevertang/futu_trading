@@ -215,7 +215,8 @@ class MockGateway:
         """The mock account trades for free; fees are a live-broker concern."""
         return pd.DataFrame(columns=["order_id", "fee_amount", "fee_details"])
 
-    def get_klines(self, code: str, start: str, end: str) -> pd.DataFrame:
+    def get_klines(self, code: str, start: str, end: str, adjusted: bool = True) -> pd.DataFrame:
+        # Mock prices carry no dividends, so adjusted and traded are the same.
         series = self.prices.get(code, {})
         rows = []
         for d, px in series.items():

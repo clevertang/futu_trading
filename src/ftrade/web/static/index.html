@@ -124,7 +124,8 @@ body.share .grid.two{grid-template-columns:1fr}
 body.share .meta{text-align:left;font-size:12px}
 /* view=holdings: today's state, nothing from a period */
 body.share.holdings [data-noholdings]{display:none!important}
-body.share.holdings #capital-wrap:not([hidden]){display:block!important}
+body.share.holdings #capital-wrap:not([hidden]),
+body.share.holdings #todate-wrap:not([hidden]){display:block!important}
 body.share.holdings #tab-positions .grid.half{grid-template-columns:1fr}
 </style>
 </head>
@@ -157,6 +158,10 @@ body.share.holdings #tab-positions .grid.half{grid-template-columns:1fr}
       <h2 data-t="capital"></h2><p class="hint" data-t="capitalHint"></p>
       <div class="tw"><table class="num" id="t-capital"></table></div>
       <p class="dispo-note" id="capital-note" style="border-top:none;padding-top:10px"></p>
+    </section>
+    <section style="margin-bottom:14px" id="todate-wrap" data-live hidden>
+      <h2 data-t="toDate"></h2><p class="hint" id="todate-hint"></p>
+      <div class="cards num" id="todate-cards" style="margin-bottom:0"></div>
     </section>
     <section style="margin-bottom:14px" id="milestone-wrap" data-live hidden>
       <h2 id="milestone-title"></h2><p class="hint" data-t="milestoneHint"></p>
@@ -533,6 +538,34 @@ function renderAll() {
       ? fill("exposureNote", { n: pct(eq.gross_exposure, 0) }) : "";
   }
 
+  // this year / this month to the latest snapshot -- today-relative, so it
+  // stays out of a period share and leads the holdings one
+  const td = rep.to_date || {};
+  const tdWrap = document.getElementById("todate-wrap");
+  tdWrap.hidden = !(td.year || td.month);
+  if (!tdWrap.hidden) {
+    const tdCards = [], tdRealized = [];
+    const signed = v => (v > 0 ? "+" : "") + fmt(v);
+    for (const key of ["year", "month"]) {
+      const p = td[key];
+      if (!p) continue;
+      const label = T(key === "year" ? "tdYear" : "tdMonth");
+      // The headline: net-asset change, open positions included. Absent, not
+      // zero, when it can be neither read from snapshots nor rebuilt.
+      if (p.nav) tdCards.push([fill("tdNav", { p: label }),
+        (p.nav.pct >= 0 ? "+" : "") + pct(p.nav.pct, 2), dir(p.nav.pct),
+        fill("tdNavSub", { v: signed(p.nav.pnl), a: esc(p.nav.from), b: esc(p.nav.to) }) +
+          (p.nav.method === "rebuilt" ? T("tdRebuiltSub") : "")]);
+      tdRealized.push([fill("tdRealized", { p: label }), signed(p.net), dir(p.net),
+        fill("tdRealizedSub", { g: signed(p.realized), f: fmt(p.fees) }) +
+          (p.dividends ? fill("tdDividendsSub", { d: signed(p.dividends) }) : "")]);
+    }
+    tdCards.push(...tdRealized);
+    document.getElementById("todate-cards").innerHTML = tdCards.map(([k, v, c, s]) =>
+      `<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div><div class="sub">${s}</div></div>`).join("");
+    document.getElementById("todate-hint").textContent = fill("toDateHint", { d: td.as_of || "-", cur });
+  }
+
   const obsRows = rep.observations || [];
   document.getElementById("obs").innerHTML = (
     obsRows.length && !(obsRows.length === 1 && obsRows[0].code === "none")
@@ -754,6 +787,7 @@ function renderAll() {
       // Net assets and exposure frame the positions below them; both are
       // today's figures, which is exactly what this view states it shows.
       document.getElementById("tab-positions").prepend(document.getElementById("capital-wrap"));
+      document.getElementById("tab-positions").prepend(document.getElementById("todate-wrap"));
     }
     panels.forEach(drawCharts);
     // Publish the rendered height once charts have settled, so a headless
