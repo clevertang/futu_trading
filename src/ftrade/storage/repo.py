@@ -81,6 +81,30 @@ def held_codes(db: Database) -> list[str]:
     return sorted(c for c in df["code"].dropna().tolist() if c)
 
 
+def codes_open_before(db: Database, before: str) -> list[str]:
+    """Symbols with a non-zero net quantity from fills before `before`.
+
+    A cheap net sum, not FIFO: it decides which year-end prices to fetch, and
+    fetching one too many is harmless.
+    """
+    df = db.query(
+        "SELECT code, SUM(CASE WHEN trd_side IN ('BUY', 'BUY_BACK') THEN qty ELSE -qty END) AS net "
+        "FROM deals WHERE create_time < ? GROUP BY code",
+        [before],
+    )
+    if df.empty:
+        return []
+    return sorted(
+        c for c, n in zip(df["code"], df["net"], strict=True) if c and abs(float(n or 0)) > 1e-9
+    )
+
+
+def year_end_prices(db: Database, year: int) -> dict[str, float]:
+    """Unadjusted close on `year`'s last trading day, by symbol."""
+    df = db.query("SELECT code, close FROM year_end_prices WHERE year = ?", [year])
+    return {c: float(v) for c, v in zip(df["code"], df["close"], strict=True) if v is not None}
+
+
 def quote_status(db: Database) -> pd.DataFrame:
     """Per-symbol quote-fetch history: consecutive failures and last outcome."""
     return db.query("SELECT * FROM quote_status")

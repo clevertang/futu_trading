@@ -209,7 +209,18 @@ def build_report(
         # Today-relative like `equity`: this year and this month to the latest
         # snapshot, whatever range the rest of the report is scoped to.
         "to_date": todate.to_date(
-            trips, dls, order_fees, flows, snaps, fx, str(snapshot_date) if snapshot_date else None
+            trips,
+            dls,
+            order_fees,
+            flows,
+            snaps,
+            fx,
+            str(snapshot_date) if snapshot_date else None,
+            positions=pos,
+            year_end=repo.year_end_prices(
+                db, int(str(snapshot_date)[:4]) - 1 if snapshot_date else 0
+            ),
+            currency_of=currency_of,
         ),
         "milestone": equity.milestone_progress(net, getattr(a, "net_asset_milestone", None), fx),
     }

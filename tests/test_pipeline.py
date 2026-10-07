@@ -587,5 +587,26 @@ def test_report_carries_this_year_and_this_month_regardless_of_range(tmp_path):
     assert full["month"]["since"] == full["as_of"][:7] + "-01"
     for p in (full["year"], full["month"]):
         assert p["net"] == round(p["realized"] - p["fees"] + p["dividends"], 2)
-    # A single day of snapshots has nothing before either period to start from.
-    assert full["year"]["nav"] is None and full["month"]["nav"] is None
+    # A single day of snapshots has nothing before either period to start
+    # from. The year is rebuilt from its opening holdings; the month, with no
+    # month-end prices stored, is left absent rather than valued at year-end.
+    nav = full["year"]["nav"]
+    assert nav["method"] == "rebuilt"
+    assert nav["start"] + nav["pnl"] == pytest.approx(nav["end"])
+    assert full["month"]["nav"] is None
+
+
+def test_sync_stores_year_end_closes_once(tmp_path):
+    cfg = load_config()
+    db = Database(tmp_path / "t.db")
+    svc = SyncService(db, MockGateway(cfg), cfg)
+    svc.sync_all(full=True)
+
+    first = db.query("SELECT * FROM year_end_prices")
+    again = svc.sync_year_end_prices()
+    db.close()
+
+    assert again == 0  # already stored for that year
+    assert not first.empty
+    assert (first["close"] > 0).all()
+    assert all(str(d).endswith("12-31") or str(d)[5:7] == "12" for d in first["close_date"])

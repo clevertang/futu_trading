@@ -258,8 +258,9 @@ class FutuGateway:
         )
         return df if df is not None else pd.DataFrame()
 
-    def get_klines(self, code: str, start: str, end: str) -> pd.DataFrame:
+    def get_klines(self, code: str, start: str, end: str, adjusted: bool = True) -> pd.DataFrame:
         futu = _futu()
+        autype = futu.AuType.QFQ if adjusted else futu.AuType.NONE
         ctx = self._quote()
         frames: list[pd.DataFrame] = []
         page_key = None
@@ -272,7 +273,7 @@ class FutuGateway:
                     start=start,
                     end=end,
                     ktype=futu.KLType.K_DAY,
-                    autype=futu.AuType.QFQ,
+                    autype=autype,
                     max_count=1000,
                     page_req_key=pk,
                 ),

@@ -53,8 +53,11 @@ class Gateway(Protocol):
         """区间历史订单。"""
         ...
 
-    def get_klines(self, code: str, start: str, end: str) -> pd.DataFrame:
-        """日线：time_key, open, high, low, close, volume"""
+    def get_klines(self, code: str, start: str, end: str, adjusted: bool = True) -> pd.DataFrame:
+        """日线：time_key, open, high, low, close, volume
+
+        Forward-adjusted by default; `adjusted=False` gives the prices that
+        actually traded, which valuing a past holding needs."""
         ...
 
     def get_cash_flow(self, acc_id: int, clearing_date: str) -> pd.DataFrame:

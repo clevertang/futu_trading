@@ -107,6 +107,19 @@ CREATE TABLE IF NOT EXISTS klines (
     PRIMARY KEY (code, time_key)
 );
 
+-- Unadjusted closing price on a year's last trading day, for every stock
+-- held across that year-end. `klines` is forward-adjusted, which lowers past
+-- prices by later dividends (TQQQ's 2025-12-31 close: 52.41 adjusted, 52.72
+-- traded), so a year's opening value cannot be read from it.
+CREATE TABLE IF NOT EXISTS year_end_prices (
+    code        TEXT NOT NULL,
+    year        INTEGER NOT NULL,
+    close_date  TEXT,
+    close       REAL,
+    synced_at   TEXT,
+    PRIMARY KEY (code, year)
+);
+
 CREATE TABLE IF NOT EXISTS sync_state (
     key        TEXT PRIMARY KEY,
     value      TEXT,

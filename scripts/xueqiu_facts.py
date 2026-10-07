@@ -235,12 +235,25 @@ def to_date_lines(td: dict) -> list[str]:
                 if nav["external"]
                 else "，期间无出入金"
             )
+            how = (
+                f"按年初持仓重建，年初净资产 {nav['start']:,.2f} 为倒推；"
+                f"浮盈变化 {_money(nav.get('open_pl_change'))}，利息等 {_money(nav.get('other'))}"
+                + (
+                    f"；{'、'.join(nav['carried_at_cost'])} 年初按开仓价计"
+                    if nav.get("carried_at_cost")
+                    else ""
+                )
+                if nav.get("method") == "rebuilt"
+                else f"净资产 {nav['start']:,.2f} → {nav['end']:,.2f}"
+            )
             lines.append(
-                f"- {label}净资产 {nav['from']} {nav['start']:,.2f} → {nav['to']} "
-                f"{nav['end']:,.2f}，变化 {_money(nav['pnl'])}（{nav['pct'] * 100:+.2f}%）{ext}"
+                f"- {label}收益（含浮盈）{_money(nav['pnl'])}（{nav['pct'] * 100:+.2f}%），"
+                f"{nav['from']} → {nav['to']}{ext}。{how}"
             )
         else:
-            lines.append(f"- {label}净资产变化：无（{p.get('since')} 之前没有净值快照）")
+            lines.append(
+                f"- {label}收益（含浮盈）：算不出（{p.get('since')} 之前没有快照，持仓也无法重建）"
+            )
     return lines
 
 
