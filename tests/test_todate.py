@@ -106,6 +106,22 @@ def test_an_option_across_the_year_end_is_carried_at_cost_and_named():
     assert out["carried_at_cost"] == ["US.X260109C120000"]
 
 
+def test_an_expired_option_the_broker_still_lists_does_not_block_the_rebuild():
+    # Futu books the settlement fill overnight but keeps the contract in its
+    # position list for about another day (seen 2026-09-29 and 2026-10-13).
+    deals = _deals(
+        [
+            ("US.X", "BUY", 10, 100.0, "2025-06-01 10:00:00"),
+            ("US.X", "SELL", 5, 120.0, "2026-03-01 10:00:00"),
+            ("US.X261005C130000", "SELL_SHORT", 1, 1.0, "2026-10-01 10:00:00"),
+            ("US.X261005C130000", "BUY_BACK", 1, 0.0, "2026-10-06 01:34:00"),
+        ]
+    )
+    positions = [("US.X", 5, 650.0), ("US.X261005C130000", -1, -1.0)]
+    out = _rebuild(deals, positions, {"US.X": 110.0})
+    assert out is not None and out["pnl"] == 150.0
+
+
 def test_no_rebuild_without_the_year_end_price_or_when_the_book_disagrees():
     deals = _deals([("US.X", "BUY", 10, 100.0, "2025-06-01 10:00:00")])
     assert _rebuild(deals, [("US.X", 10, 1300.0)], {}) is None

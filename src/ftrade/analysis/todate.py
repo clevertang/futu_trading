@@ -32,7 +32,7 @@ from . import cash as cash_mod
 from . import fees as fees_mod
 from . import metrics, trades
 from .fx import FX
-from .instruments import contract_multiplier
+from .instruments import contract_multiplier, option_expiry
 from .pnl import open_lots
 
 # Money moved in or out of the account from outside it. Every other flow type
@@ -140,12 +140,16 @@ def rebuilt_change(
         return None
     end_date, end = str(curve["snap_date"].iloc[-1]), float(curve["total_assets"].iloc[-1])
 
-    held = positions[positions["qty"].astype(float) != 0]
+    # The broker keeps an expired contract listed for about a day after its
+    # settlement fill is booked; open_lots() already treats it as gone.
+    as_of_day = date.fromisoformat(end_date)
+    expired = positions["code"].map(lambda c: (option_expiry(c) or as_of_day) < as_of_day)
+    held = positions[(positions["qty"].astype(float) != 0) & ~expired]
     broker = {
         c: (float(q), float(v or 0))
         for c, q, v in zip(held["code"], held["qty"], held["market_val"], strict=True)
     }
-    now = open_lots(deals, as_of=date.fromisoformat(end_date))
+    now = open_lots(deals, as_of=as_of_day)
     if {c: q for c, q in zip(now["code"], now["qty"], strict=True)} != {
         c: round(q, 4) for c, (q, _v) in broker.items()
     }:
