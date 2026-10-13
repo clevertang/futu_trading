@@ -149,6 +149,14 @@ long-form editor, which **autosaves to drafts** — there is no save button:
 2. **Wait for the editor to finish loading** (take a screenshot) before
    typing. Text typed straight after navigation is silently dropped — that
    once produced an untitled, image-only draft.
+
+   **The tab must be on screen.** Check `document.visibilityState`; if it
+   is `hidden` (Chrome minimised, or the window behind others), Chrome
+   freezes the page: screenshots, `find` and `file_upload` time out, typed
+   keys are dropped, an upload never sends, and the editor never autosaves
+   — the counter stays at `草稿 (0)`. Opening a new tab does not help. Ask
+   the owner to bring that Chrome tab to the front and re-check before going
+   on; nothing written while hidden is saved.
 3. Click the title box (use its ref from `find`, "请输入标题") and type the
    title. Enter does **not** move to the body — it keeps typing into the
    title. Titles have a length cap: the editor shows
