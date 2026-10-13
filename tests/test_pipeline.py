@@ -610,3 +610,35 @@ def test_sync_stores_year_end_closes_once(tmp_path):
     assert not first.empty
     assert (first["close"] > 0).all()
     assert all(str(d).endswith("12-31") or str(d)[5:7] == "12" for d in first["close_date"])
+
+
+def test_an_expired_contract_the_broker_still_lists_is_not_shown_as_held(tmp_path):
+    # Futu keeps an expired contract in its position list for about a day
+    # after booking its settlement; the holdings image showed it at -1 days.
+    cfg = load_config()
+    db = Database(tmp_path / "t.db")
+    SyncService(db, MockGateway(cfg), cfg).sync_all(full=True)
+    snap_date, acc_id = db.query(
+        "SELECT snap_date, acc_id FROM position_snapshots ORDER BY snap_date DESC LIMIT 1"
+    ).iloc[0]
+    expiry = pd.Timestamp(snap_date) - pd.Timedelta(days=1)
+    code = f"US.TQQQ{expiry:%y%m%d}C85000"
+    db.upsert(
+        "position_snapshots",
+        [
+            {
+                "snap_date": snap_date,
+                "acc_id": int(acc_id),
+                "code": code,
+                "currency": "USD",
+                "qty": -1.0,
+                "market_val": -1.0,
+            }
+        ],
+    )
+
+    rep = build_report(db, cfg)
+    db.close()
+
+    assert code not in [h["code"] for h in rep["portfolio"]["holdings_detail"]]
+    assert code not in [o["code"] for o in rep["options_monitor"]]

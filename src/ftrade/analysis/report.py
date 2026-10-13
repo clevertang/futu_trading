@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from ..storage import repo
 from ..storage.db import Database
@@ -10,7 +10,7 @@ from . import cash as cash_mod
 from . import corporate, equity, metrics, portfolio, todate, trades
 from . import fees as fees_mod
 from .fx import FX, currency_for_code
-from .instruments import parse_option, underlying_of
+from .instruments import option_expiry, parse_option, underlying_of
 from .options_monitor import open_option_positions
 from .pnl import fifo_round_trips, open_lots
 
@@ -88,6 +88,19 @@ def _recent_trips(trips, start: str | None, end: str | None) -> list[dict]:
     return t.sort_values("close_time", ascending=False).head(50).to_dict("records")
 
 
+def _drop_expired(pos):
+    """Positions without option contracts already past expiry on the snapshot date.
+
+    Futu books an expired contract's settlement fill overnight but keeps it in
+    the position list for about another day. open_lots() already treats it as
+    gone; left in, it showed on the holdings image as held with -1 days to go.
+    """
+    if pos.empty:
+        return pos
+    day = date.fromisoformat(str(pos["snap_date"].iloc[0])[:10])
+    return pos[~pos["code"].map(lambda c: (option_expiry(c) or day) < day)]
+
+
 def build_report(
     db: Database,
     cfg,
@@ -107,7 +120,7 @@ def build_report(
     a = cfg.analysis
     fx = FX(a.fx_rates, a.base_currency).rebase(base) if base else FX(a.fx_rates, a.base_currency)
 
-    pos = repo.positions(db, acc_id=acc_id)
+    pos = _drop_expired(repo.positions(db, acc_id=acc_id))
     dls = corporate.apply_actions(repo.deals(db, acc_id=acc_id), corporate.from_config(cfg))
     snaps = repo.account_snapshots(db, acc_id=acc_id)
 
