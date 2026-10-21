@@ -138,6 +138,17 @@ TQQQ 09-28 80 call 2张到期作废
 TQQQ 600股，上面卖了……
 ```
 
+**Choosing the title — test it against the owner's own history.** Run
+`python scripts/xueqiu_stats.py report` (step 7 keeps its data current)
+before proposing a title, and bring what it shows into the proposal, not
+general advice about what gets read. Read the per-year tables, not just the
+pooled one: 2024's posts drew several times 2026's reads whatever their
+titles, so a pooled gap is often just the year (headline names looked like a
+win pooled; within 2024 they made no difference). Change one thing per post,
+record it with `xueqiu_stats.py note "TITLE" "what was tried"`, and judge it
+only once the post is a few days old. A title still states the period's
+facts — no loss, gain or drama the numbers do not show (hard rule 4).
+
 ### 6. Review, then save as draft
 
 Show the complete title, body, image path and the list of `【】`
@@ -172,7 +183,25 @@ long-form editor, which **autosaves to drafts** — there is no save button:
    ```
 
    Then type, one paragraph per `Enter` (a second `Enter` leaves a large
-   gap); plain text only, the editor does not render Markdown. After typing,
+   gap); plain text only, the editor does not render Markdown.
+
+   Faster and verified twice (2026-10-13, 10-19): paste the whole body in
+   one synthetic event — a synthetic `⌘A` keydown first, so the editor's own
+   selection covers the body (a DOM selection alone is ignored; the paste
+   then lands at the end):
+
+   ```js
+   pm.dispatchEvent(new KeyboardEvent('keydown', {key: 'a', code: 'KeyA', keyCode: 65, metaKey: true, bubbles: true, cancelable: true}));
+   const dt = new DataTransfer();
+   dt.setData('text/plain', lines.join('\n'));
+   dt.setData('text/html', lines.map(l => '<p>' + l + '</p>').join(''));
+   pm.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true}));
+   ```
+
+   The title takes the native setter: `Object.getOwnPropertyDescriptor(
+   HTMLTextAreaElement.prototype, 'value').set.call(ta, title)` and then an
+   `input` event. A whole-body paste is also the safe way to correct a draft
+   — it replaces everything instead of typing over a selection. After typing,
    read `document.querySelector('.ProseMirror').innerText` back and compare
    it with the approved draft — do not trust the type action alone.
 5. Upload the image **last**, through the first `type=file` input (the
@@ -211,6 +240,33 @@ placeholder):
   not shift.
 - When the same reasoning would appear in more than one post, say it once and
   refer back (`看好的逻辑上一篇说过`) rather than repeating it.
+
+### 7. Track how posts do
+
+Xueqiu shows only each post's running totals, so growth exists only if they
+are captured repeatedly: capture on every sync, and again a few days after a
+post goes out. Open https://mp.xueqiu.com/list/article/ (长文管理) and read
+every page with this — tab-separated rows, because the tool truncates long
+results; if it is cut off, read the remaining pages in a second call:
+
+```js
+const grab = () => { const t = document.body.innerText.split('\n').map(s => s.trim()).filter(Boolean); const rows = [];
+  for (let i = 0; i < t.length; i++) { const m = t[i].match(/^阅读(\d+) · 点赞(\d+) · 讨论(\d+) · 转发(\d+) · 收藏(\d+)$/);
+    if (m) rows.push([t[i-2], t[i-1], ...m.slice(1)].join('\t')); } return rows; };
+const all = [];
+for (const p of ['1', '2', '3']) {  // one entry per page in the pager
+  const el = [...document.querySelectorAll('li, a, button, span')].find(e => e.innerText.trim() === p && e.children.length === 0);
+  if (el) { el.click(); await new Promise(r => setTimeout(r, 2500)); }
+  all.push(...grab());
+}
+all.join('\n')
+```
+
+Check the row count against 已发布N, convert the rows to a JSON list of
+`{title, published, reads, likes, comments, reposts, favorites}` in the
+scratchpad, then `python scripts/xueqiu_stats.py record FILE.json`. A second
+capture on the same day replaces the first. The log lives in
+`reports/xueqiu/post_stats.jsonl` (gitignored).
 
 ## Notes
 
