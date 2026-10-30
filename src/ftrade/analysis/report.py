@@ -7,7 +7,7 @@ from datetime import date, datetime
 from ..storage import repo
 from ..storage.db import Database
 from . import cash as cash_mod
-from . import corporate, equity, metrics, portfolio, todate, trades
+from . import corporate, equity, margin, metrics, portfolio, todate, trades
 from . import fees as fees_mod
 from .fx import FX, currency_for_code
 from .instruments import option_expiry, parse_option, underlying_of
@@ -99,6 +99,24 @@ def _long_option_value(pos, fx: FX) -> float:
         if parse_option(code) and float(qty or 0) > 0:
             total += fx.to_base(float(mv or 0), cur) or 0.0
     return total
+
+
+def _last_prices(db, pos, codes) -> dict[str, float]:
+    """Last price per symbol: the broker's quote if held, else the latest daily close."""
+    held = (
+        {c: float(p) for c, p in zip(pos["code"], pos["nominal_price"], strict=True) if p}
+        if not pos.empty
+        else {}
+    )
+    out = {}
+    for code in codes:
+        if code in held:
+            out[code] = held[code]
+            continue
+        kl = repo.klines(db, code)
+        if not kl.empty:
+            out[code] = float(kl["close"].iloc[-1])
+    return out
 
 
 def _drop_expired(pos):
@@ -200,6 +218,14 @@ def build_report(
     bh = _with_net_of_fees(trades.behavior(trips, dls, fx, start=start, end=end), fee_stats)
     net = acct.get("total_assets")
     pf["holdings_detail"] = equity.net_asset_weights(pf.get("holdings_detail", []), net)
+    margin_model = margin.margin_model(
+        pf.get("holdings_detail", []),
+        acct,
+        getattr(a, "margin_rates", None),
+        fx,
+        prices=_last_prices(db, pos, getattr(a, "margin_rates", None) or {}),
+        currency_of=currency_of,
+    )
     bh["realized_by_code"] = _merge_unrealized(
         bh.get("realized_by_code", []), pf.get("holdings_detail", []), dividends
     )
@@ -250,5 +276,6 @@ def build_report(
             ),
             currency_of=currency_of,
         ),
+        "margin_model": margin_model,
         "milestone": equity.milestone_progress(net, getattr(a, "net_asset_milestone", None), fx),
     }

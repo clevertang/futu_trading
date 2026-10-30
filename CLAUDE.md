@@ -103,6 +103,12 @@ zero rows across a multi-year pull.
 - `trades.behavior()` derives win rate, payoff ratio, holding periods, and the
   disposition-effect comparison.
 - `fx.FX` converts to `analysis.base_currency` using **static** rates from config.
+- `margin.margin_model()` applies per-symbol margin rates declared in
+  `analysis.margin_rates` (copied from the app; the API only gives account
+  totals). The broker's own requirement stays the baseline; the rates only
+  shape how it moves: the index fall to a call (a `beta: 3` ETF counts three
+  times), per-symbol buying headroom, and the same after selling long options,
+  which carry no loan value. `maintenance_gap` flags rates gone stale.
 
 **`report.build_report()`** assembles all of the above into one dict — this is
 what the CLI, the web panel, and (in Phase 2) the advice engine all consume.

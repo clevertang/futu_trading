@@ -73,3 +73,11 @@ web:
   #   amount: 50000
   #   currency: USD
   #   label: "switch TQQQ position to QQQ"
+
+  # 各标的的保证金率（富途 API 只给账户合计，这里手抄 App 里「初始保证金」页的数字）。
+  # beta = 相对参考指数的倍数（TQQQ 是 3 倍 QQQ），默认 1。
+  # 用来算「按指数算还能跌多少才追保」和「每个标的还能买多少」。
+  # 期权：买入的没有抵押价值、也不占保证金；备兑卖出的 call 不额外占用。
+  # margin_rates:
+  #   US.TQQQ: {initial: 0.50, maintenance: 0.45, beta: 3}
+  #   US.QQQ:  {initial: 0.40, maintenance: 0.30}
