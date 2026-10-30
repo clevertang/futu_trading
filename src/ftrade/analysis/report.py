@@ -88,6 +88,19 @@ def _recent_trips(trips, start: str | None, end: str | None) -> list[dict]:
     return t.sort_values("close_time", ascending=False).head(50).to_dict("records")
 
 
+def _long_option_value(pos, fx: FX) -> float:
+    """Market value of options held long, in fx's base: no loan value at the broker."""
+    if pos.empty:
+        return 0.0
+    total = 0.0
+    for code, qty, mv, cur in zip(
+        pos["code"], pos["qty"], pos["market_val"], pos["currency"], strict=True
+    ):
+        if parse_option(code) and float(qty or 0) > 0:
+            total += fx.to_base(float(mv or 0), cur) or 0.0
+    return total
+
+
 def _drop_expired(pos):
     """Positions without option contracts already past expiry on the snapshot date.
 
@@ -180,7 +193,9 @@ def build_report(
     klines_by_code = {u: repo.klines(db, u) for u in option_underlyings}
     options = open_option_positions(pos, klines_by_code)
 
-    acct = equity.account_equity(snaps, fx, a.base_currency)
+    acct = equity.account_equity(
+        snaps, fx, a.base_currency, long_option_value=_long_option_value(pos, fx)
+    )
     pf = portfolio.summary(pos, fx, a.concentration_warn)
     bh = _with_net_of_fees(trades.behavior(trips, dls, fx, start=start, end=end), fee_stats)
     net = acct.get("total_assets")

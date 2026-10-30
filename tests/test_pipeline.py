@@ -642,3 +642,36 @@ def test_an_expired_contract_the_broker_still_lists_is_not_shown_as_held(tmp_pat
 
     assert code not in [h["code"] for h in rep["portfolio"]["holdings_detail"]]
     assert code not in [o["code"] for o in rep["options_monitor"]]
+
+
+def test_long_options_count_toward_net_assets_but_not_toward_the_margin_check():
+    # 2026-10-30, HKD: Futu called "危险" -- equity with loan value at or under
+    # maintenance -- while net assets still stood 111k above it, because 7 long
+    # PDD calls (no loan value) made up the difference. Futu asked for 1,064.
+    from ftrade.analysis.equity import account_equity
+    from ftrade.analysis.fx import FX
+
+    snap = _snapshot(
+        snap_date="2026-10-30",
+        total_assets=253329.91,
+        market_val=433575.95,
+        maintenance_margin=142312.78,
+        margin_call_margin=141844.93,
+    )
+    eq = account_equity(
+        pd.DataFrame([snap]), FX({"HKD": 1.0}, "HKD"), "HKD", long_option_value=112312.75
+    )
+    assert eq["total_assets"] == 253329.91  # net assets are unchanged
+    assert eq["equity_with_loan"] == pytest.approx(141017.16)
+    assert eq["margin_cushion"] == pytest.approx(-1295.62)
+    assert eq["drop_to_margin_call"] == 0.0
+
+
+def test_without_long_options_the_margin_check_uses_net_assets():
+    from ftrade.analysis.equity import account_equity
+    from ftrade.analysis.fx import FX
+
+    snap = _snapshot(maintenance_margin=180000.0, margin_call_margin=180000.0)
+    eq = account_equity(pd.DataFrame([snap]), FX({"HKD": 1.0}, "HKD"), "HKD")
+    assert eq["equity_with_loan"] == eq["total_assets"]
+    assert eq["margin_cushion"] == pytest.approx(269701.08 - 180000.0)
