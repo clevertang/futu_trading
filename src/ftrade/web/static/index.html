@@ -526,6 +526,9 @@ function renderAll() {
         /WARNING|MARGIN_CALL|RESTRICTED/.test(eq.exposure_level) ? "down" : ""]] : []),
       ...(eq.maintenance_margin != null ? [[T("cMaintenance"), fmt(eq.maintenance_margin), ""]] : []),
       ...(eq.margin_call_margin != null ? [[T("cMarginCall"), fmt(eq.margin_call_margin), ""]] : []),
+      // What Futu checks against maintenance: long options carry no loan value.
+      ...(eq.margin_cushion != null ? [[T("cEwl"), fmt(eq.equity_with_loan), ""],
+        [T("cCushion"), fmt(eq.margin_cushion), dir(eq.margin_cushion)]] : []),
       ...(eq.drop_to_margin_call != null ? [[T("cDropToCall"),
         fill("dropToCallValue", { n: pct(eq.drop_to_margin_call, 0) }),
         eq.drop_to_margin_call < 0.15 ? "down" : ""]] : []),

@@ -21,9 +21,18 @@ MARGIN_COLUMNS = ("initial_margin", "maintenance_margin", "margin_call_margin")
 
 
 def account_equity(
-    snapshots: pd.DataFrame, fx: FX, stored_currency: str, snap_date: str | None = None
+    snapshots: pd.DataFrame,
+    fx: FX,
+    stored_currency: str,
+    snap_date: str | None = None,
+    long_option_value: float = 0.0,
 ) -> dict:
-    """Aggregate the latest capital snapshot across accounts, in fx's base."""
+    """Aggregate the latest capital snapshot across accounts, in fx's base.
+
+    `long_option_value` is the market value of options held long, in fx's
+    base. It belongs to net assets but has no loan value, so the broker leaves
+    it out of the margin check (see `equity_with_loan`).
+    """
     if snapshots is None or snapshots.empty:
         return {}
     df = snapshots.copy()
@@ -77,8 +86,17 @@ def account_equity(
         out["cash_ratio"] = round((out.get("cash") or 0.0) / total, 4)
         # Borrowing to hold more than the account owns.
         out["is_leveraged"] = securities > total * 1.005
+        # Futu calls "危险" when equity *with loan value* is at or under the
+        # maintenance requirement. Long options have no loan value: on
+        # 2026-10-30 seven long PDD calls kept net assets 111k HKD above
+        # maintenance while Futu was already asking for 1,064 to cover it.
+        ewl = total - (long_option_value or 0.0)
+        out["equity_with_loan"] = round(ewl, 2)
+        requirement = out.get("maintenance_margin") or out.get("margin_call_margin")
+        if requirement is not None:
+            out["margin_cushion"] = round(ewl - requirement, 2)
         out["drop_to_margin_call"] = drop_to_margin_call(
-            securities, total, out.get("margin_call_margin")
+            securities - (long_option_value or 0.0), ewl, requirement
         )
     return out
 
@@ -88,7 +106,9 @@ def drop_to_margin_call(
 ) -> float | None:
     """How far holdings can fall, all together, before the broker calls for margin.
 
-    A call comes when net assets drop below `margin_call`. Assuming that
+    `market_val` and `net_assets` are the marginable side only -- long options
+    taken out of both, since they carry no loan value. A call comes when that
+    equity drops below `margin_call`. Assuming that
     requirement stays the same share of market value as prices move, and
     the debt (market value minus net assets) stays put:
 
