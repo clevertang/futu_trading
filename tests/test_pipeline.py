@@ -658,7 +658,9 @@ def test_long_options_count_toward_net_assets_but_not_toward_the_margin_check():
         maintenance_margin=142312.78,
         margin_call_margin=141844.93,
     )
-    eq = account_equity(pd.DataFrame([snap]), FX({"HKD": 1.0}, "HKD"), "HKD", long_option_value=112312.75)
+    eq = account_equity(
+        pd.DataFrame([snap]), FX({"HKD": 1.0}, "HKD"), "HKD", long_option_value=112312.75
+    )
     assert eq["total_assets"] == 253329.91  # net assets are unchanged
     assert eq["equity_with_loan"] == pytest.approx(141017.16)
     assert eq["margin_cushion"] == pytest.approx(-1295.62)

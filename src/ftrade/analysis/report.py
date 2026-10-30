@@ -93,7 +93,9 @@ def _long_option_value(pos, fx: FX) -> float:
     if pos.empty:
         return 0.0
     total = 0.0
-    for code, qty, mv, cur in zip(pos["code"], pos["qty"], pos["market_val"], pos["currency"], strict=True):
+    for code, qty, mv, cur in zip(
+        pos["code"], pos["qty"], pos["market_val"], pos["currency"], strict=True
+    ):
         if parse_option(code) and float(qty or 0) > 0:
             total += fx.to_base(float(mv or 0), cur) or 0.0
     return total
