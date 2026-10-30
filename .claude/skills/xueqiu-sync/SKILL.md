@@ -204,6 +204,14 @@ long-form editor, which **autosaves to drafts** — there is no save button:
    — it replaces everything instead of typing over a selection. After typing,
    read `document.querySelector('.ProseMirror').innerText` back and compare
    it with the approved draft — do not trust the type action alone.
+
+   To correct a published post (`https://mp.xueqiu.com/writeV2/edit/<id>`),
+   paste a modified copy of `pm.innerHTML` so images and stock tags survive.
+   Select all with a synthetic `Meta+A` keydown on the editor first; a DOM
+   range selection is ignored and the paste lands *next to* the old body,
+   doubling it (reload to discard). Copy only after the editor's `img`
+   count matches the live post's: images load late, and copying early
+   republishes the post without them.
 5. Upload the image **last**, through the first `type=file` input (the
    toolbar image button) with the file-upload tool — it lands at the cursor.
    Placing the cursor before an existing image does not work, so do not
