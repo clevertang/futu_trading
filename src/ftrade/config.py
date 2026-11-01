@@ -49,6 +49,10 @@ class AnalysisConfig:
     # A personal plan tracked as a fact, not enforced: e.g. "switch to QQQ once
     # net assets reach 50,000 USD". None disables the tracker.
     net_asset_milestone: dict | None = None
+    # Per-symbol margin rates copied from the broker's app (Futu's API only
+    # gives account totals): {"US.TQQQ": {"initial": 0.5, "maintenance": 0.45,
+    # "beta": 3}}. Empty disables the per-symbol model.
+    margin_rates: dict = field(default_factory=dict)
 
 
 @dataclass

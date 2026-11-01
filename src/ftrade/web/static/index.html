@@ -486,6 +486,7 @@ function renderAll() {
       `${T("dealRange")} <b>${bh.first_deal || "-"}</b> → <b>${bh.last_deal || "-"}</b>`;
 
   const eq = rep.equity || {};
+  const mmod = rep.margin_model || null;
   const cards = [];
   if (eq.total_assets != null && !SHARE) {
     cards.push([T("netAssets"), fmt(eq.total_assets), "",
@@ -532,6 +533,20 @@ function renderAll() {
       ...(eq.drop_to_margin_call != null ? [[T("cDropToCall"),
         fill("dropToCallValue", { n: pct(eq.drop_to_margin_call, 0) }),
         eq.drop_to_margin_call < 0.15 ? "down" : ""]] : []),
+      // Per-symbol rates from config: a 3x ETF counts three times the index move.
+      ...(mmod && mmod.index_fall_to_call != null ? [[T("cIndexFall"),
+        fill("indexFallValue", { n: pct(mmod.index_fall_to_call, 1) }),
+        mmod.index_fall_to_call < 0.1 ? "down" : ""]] : []),
+      ...(mmod ? (mmod.headroom || []).map(h => [
+        fill("cHeadroom", { c: esc(String(h.code).replace(/^[A-Z]+\./, "")) }),
+        h.max_shares != null
+          ? fill("headroomValue", { n: h.max_shares, f: pct(h.index_fall_after_max ?? 0, 1) })
+          : fmt(h.max_buy),
+        ""]) : []),
+      ...(mmod && mmod.if_long_options_sold ? [[T("cIfOptionsSold"),
+        fill("ifOptionsSoldValue", {
+          v: fmt(mmod.if_long_options_sold.proceeds),
+          n: pct(mmod.if_long_options_sold.index_fall_to_call, 1) }), ""]] : []),
     ];
     document.getElementById("t-capital").innerHTML =
       "<tbody>" + rows.map(([k, v, c]) =>
