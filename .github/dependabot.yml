@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Action versions are floating majors (@v4/@v5); Dependabot is what keeps
+  # Action versions are floating majors (e.g. @v7); Dependabot is what keeps
   # them current, since nothing else in CI pins them.
   - package-ecosystem: github-actions
     directory: /
