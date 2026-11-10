@@ -27,6 +27,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Non-Python files the package reads at runtime. Without this a wheel has no
+# schema (Database() fails) and no panel (serve has no page).
+[tool.setuptools.package-data]
+ftrade = ["storage/schema.sql", "web/static/*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

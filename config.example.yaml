@@ -63,10 +63,6 @@ analysis:
   #   - {type: split,  code: US.QTT,   ratio: 0.1,  date: "2022-06-01"}
   #   - {type: writeoff, code: US.QTT,              date: "2023-01-01"}
 
-web:
-  host: 127.0.0.1
-  port: 8765
-
   # 个人计划里设定的净资产里程碑（如"到 5 万美元后换成 QQQ"）。
   # 纯事实追踪，不会自动执行任何操作，也不建议这个计划是否合理。
   # net_asset_milestone:
@@ -81,3 +77,7 @@ web:
   # margin_rates:
   #   US.TQQQ: {initial: 0.50, maintenance: 0.45, beta: 3}
   #   US.QQQ:  {initial: 0.40, maintenance: 0.30}
+
+web:
+  host: 127.0.0.1
+  port: 8765
