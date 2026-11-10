@@ -186,7 +186,7 @@ def main() -> None:
     if fills.empty:
         print("- 无")
     else:
-        for f in label_fills(fills.sort_values("create_time"), history):
+        for f in label_fills(fills.sort_values("create_time", kind="stable"), history):
             print(describe(f))
 
     print(f"\n## 3. 当前持仓（{snap} 快照，是**今天**的状态，不是区间结果）\n")

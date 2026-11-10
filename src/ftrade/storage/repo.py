@@ -57,7 +57,7 @@ def deals(
     if acc_id is not None:
         sql += " AND acc_id = ?"
         params.append(acc_id)
-    return db.query(sql + " ORDER BY create_time", params)
+    return db.query(sql + " ORDER BY create_time, deal_id", params)
 
 
 def accounts(db: Database) -> pd.DataFrame:

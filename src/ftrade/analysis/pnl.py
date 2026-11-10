@@ -232,7 +232,7 @@ def fifo_round_trips(
     df["_action"] = df["trd_side"].map(_action)
     df = df[df["_action"].notna()]
     df["_ts"] = df["create_time"].map(_ts)
-    df = df.sort_values("_ts")
+    df = df.sort_values("_ts", kind="stable")
 
     trips: list[RoundTrip] = []
     for code, sub in df.groupby("code"):
@@ -275,7 +275,7 @@ def open_lots(deals: pd.DataFrame, as_of: date | None = None) -> pd.DataFrame:
     df["_action"] = df["trd_side"].map(_action)
     df = df[df["_action"].notna()].copy()
     df["_ts"] = df["create_time"].map(_ts)
-    df = df.sort_values("_ts")
+    df = df.sort_values("_ts", kind="stable")
 
     rows = []
     for code, sub in df.groupby("code"):

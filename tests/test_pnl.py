@@ -1022,3 +1022,17 @@ def test_moneyness_falls_back_to_the_daily_close_when_the_underlying_is_not_held
     )[0]
 
     assert row["underlying_price"] == 77.94
+
+
+def test_fills_sharing_a_timestamp_keep_their_feed_order():
+    # Same-second buy/sell pairs (partial fills, day trades) must pair in the
+    # order the feed lists them. An unstable sort can put a sell ahead of its
+    # buy, which drops the sell as unmatched and leaves a phantom open lot.
+    rows = []
+    for _ in range(40):
+        rows.append(("US.A", "BUY", 1, 10.0, "2026-01-01 10:00:00"))
+        rows.append(("US.A", "SELL", 1, 11.0, "2026-01-01 10:00:00"))
+    df = _deals(rows)
+    trips = fifo_round_trips(df)
+    assert len(trips) == 40
+    assert open_lots(df).empty
