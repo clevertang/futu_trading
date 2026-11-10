@@ -115,3 +115,27 @@ def test_a_put_delivers_shares_in_not_out():
     fills = facts.label_fills(history.iloc[[1, 2]], history)
 
     assert [f["kind"] for f in fills] == ["order", "assignment"]
+
+
+def test_a_call_bought_back_before_expiry_does_not_turn_a_later_sale_into_a_delivery():
+    # Pre-2025 there is no settlement fill, so delivery is inferred. A call
+    # the owner bought back before expiry left nothing to deliver: a sale at
+    # the strike a few days later is the owner's own order.
+    out = _kinds(
+        [
+            ("US.NVDA240816C120000", "SELL_SHORT", 1, 2.0, "2024-08-05 10:00:00"),
+            ("US.NVDA240816C120000", "BUY_BACK", 1, 0.5, "2024-08-12 10:00:00"),
+            ("US.NVDA", "SELL", 100, 120.0, "2024-08-19 10:00:00"),
+        ]
+    )
+    assert out[-1] == ("US.NVDA", "order")
+
+
+def test_a_call_still_short_at_expiry_is_still_inferred_as_delivered():
+    out = _kinds(
+        [
+            ("US.NVDA240816C120000", "SELL_SHORT", 1, 2.0, "2024-08-05 10:00:00"),
+            ("US.NVDA", "SELL", 100, 120.0, "2024-08-19 10:00:00"),
+        ]
+    )
+    assert out[-1] == ("US.NVDA", "assignment")

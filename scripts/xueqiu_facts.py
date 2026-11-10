@@ -94,11 +94,22 @@ def label_fills(deals, history=None) -> list[dict]:
                 s["kind"], r["kind"] = "exercised", "assignment"
                 break
 
-    shorts = []  # contracts written at some point, from the whole history
+    # Contracts still short going into expiry, from the whole history. One
+    # bought back beforehand (a priced BUY_BACK) left nothing to deliver, and
+    # a sale at its strike afterwards is the owner's own order.
+    net: dict[str, float] = {}
+    parsed: dict[str, dict] = {}
     for h in (history if history is not None else deals).to_dict("records"):
         opt = parse_option(h["code"])
-        if opt and h["trd_side"] == "SELL_SHORT":
-            shorts.append(opt)
+        if not opt:
+            continue
+        qty = float(h["qty"] or 0)
+        if h["trd_side"] == "SELL_SHORT":
+            net[h["code"]] = net.get(h["code"], 0.0) + qty
+            parsed[h["code"]] = opt
+        elif h["trd_side"] == "BUY_BACK" and float(h["price"] or 0) > 0:
+            net[h["code"]] = net.get(h["code"], 0.0) - qty
+    shorts = [parsed[c] for c, q in net.items() if c in parsed and q > 1e-9]
     for r in rows:
         if r["opt"] or r["kind"] != "order":
             continue
