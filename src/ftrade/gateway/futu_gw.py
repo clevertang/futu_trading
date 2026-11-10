@@ -80,8 +80,12 @@ class FutuGateway:
                 log.debug("关闭交易连接失败", exc_info=True)
         self._trade_ctxs.clear()
         if self._quote_ctx is not None:
+            # Swallowed like the trade contexts: raised from __exit__ it would
+            # replace whatever exception is already unwinding.
             try:
                 self._quote_ctx.close()
+            except Exception:  # pragma: no cover
+                log.debug("关闭行情连接失败", exc_info=True)
             finally:
                 self._quote_ctx = None
 
