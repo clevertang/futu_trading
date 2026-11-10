@@ -27,6 +27,8 @@ console = Console()
 # through is stored.
 EXIT_PARTIAL = 3
 
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
 
 def _db(cfg) -> Database:
     return Database(cfg.db_path)
@@ -57,6 +59,17 @@ def cmd_init(args, cfg) -> int:
 
 
 def cmd_sync(args, cfg) -> int:
+    if args.source == "mock":
+        with _db(cfg) as db:
+            real = db.scalar("SELECT COUNT(*) FROM accounts WHERE trd_env = 'REAL'")
+        if real:
+            # Nothing downstream filters by account type: mock deals and
+            # snapshots would merge straight into the real report.
+            console.print(
+                f"[red]{cfg.db_path} 里已有真实账户数据，拒绝写入模拟数据。"
+                "请用另一个配置（-c）指向单独的 db_path。"
+            )
+            return 1
     with _db(cfg) as db, build_gateway(cfg, args.source) as gw:
         stats = SyncService(db, gw, cfg).sync_all(
             full=args.full,
@@ -273,7 +286,16 @@ def cmd_serve(args, cfg) -> int:
 
     host = args.host or cfg.web.host
     port = args.port or cfg.web.port
-    app = create_app(cfg)
+    if host not in LOOPBACK and not args.allow_remote:
+        # The panel has no login: anyone who can reach it reads the account.
+        console.print(
+            f"[red]拒绝监听 {host}：面板没有登录保护，任何能访问的人都能看到账户数据。"
+            "确实需要请加 --allow-remote。"
+        )
+        return 1
+    if host not in LOOPBACK:
+        console.print(f"[bold red]警告：面板对 {host} 开放，没有任何访问控制。")
+    app = create_app(cfg, allow_remote=host not in LOOPBACK)
     console.print(f"[green]面板启动：http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level="warning")
     return 0
@@ -328,6 +350,9 @@ def build_parser() -> argparse.ArgumentParser:
     s_serve = sub.add_parser("serve", help="启动本地 Web 面板")
     s_serve.add_argument("--host", help="覆盖配置里的监听地址")
     s_serve.add_argument("--port", type=int, help="覆盖配置里的端口")
+    s_serve.add_argument(
+        "--allow-remote", action="store_true", help="允许监听非本机地址（无登录保护，慎用）"
+    )
     s_serve.set_defaults(func=cmd_serve)
     return p
 

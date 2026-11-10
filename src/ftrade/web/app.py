@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
+import numpy as np
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..advice import observations
 from ..analysis import build_report
@@ -15,6 +18,10 @@ from ..storage import repo
 from ..storage.db import Database
 
 STATIC = Path(__file__).parent / "static"
+
+# Names a browser may legitimately send as Host for a loopback-bound panel.
+# Anything else is a DNS-rebinding page pointed at 127.0.0.1.
+LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]", "::1"]
 
 
 # JavaScript numbers lose precision past 2**53-1. Futu account ids are 18-digit
@@ -33,14 +40,38 @@ def _stringify_big_ints(obj):
     return obj
 
 
+def _jsonable(obj):
+    """numpy scalars to Python, NaN/inf to None -- JSON has no NaN, and
+    Starlette refuses to send one (the whole report became a 500)."""
+    if isinstance(obj, dict):
+        return {k: _jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonable(v) for v in obj]
+    if isinstance(obj, np.generic):
+        obj = obj.item()
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj
+
+
 def _clean(obj):
     """把 numpy / NaN 之类转成可 JSON 化的值。"""
-    return _stringify_big_ints(json.loads(json.dumps(obj, default=str, ensure_ascii=False)))
+    return _stringify_big_ints(
+        json.loads(json.dumps(_jsonable(obj), default=str, ensure_ascii=False))
+    )
 
 
-def create_app(cfg) -> FastAPI:
+def create_app(cfg, allow_remote: bool = False) -> FastAPI:
     app = FastAPI(title="ftrade", docs_url="/api/docs")
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    # allow_remote is the owner's explicit choice to serve beyond loopback
+    # (`serve --allow-remote`); only then is any Host name accepted.
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=["*"] if allow_remote else LOOPBACK_HOSTS
+    )
+
+    # Create or migrate the schema once, here; requests then open read-only.
+    Database(cfg.db_path).close()
 
     @app.middleware("http")
     async def _no_stale_cache(request, call_next):
@@ -63,7 +94,7 @@ def create_app(cfg) -> FastAPI:
         return response
 
     def db() -> Database:
-        return Database(cfg.db_path)
+        return Database(cfg.db_path, readonly=True)
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
@@ -87,7 +118,7 @@ def create_app(cfg) -> FastAPI:
         end: str | None = None,
         code: str | None = None,
         acc_id: int | None = None,
-        limit: int = Query(500, le=5000),
+        limit: int = Query(500, ge=1, le=5000),
     ) -> JSONResponse:
         with db() as d:
             df = repo.deals(d, start=start, end=end, code=code, acc_id=acc_id)

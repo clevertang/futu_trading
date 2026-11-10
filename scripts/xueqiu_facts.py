@@ -148,7 +148,7 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = load_config()
-    with Database(cfg.db_path) as db:
+    with Database(cfg.db_path, readonly=True) as db:
         rep = build_report(db, cfg, base=args.base, start=args.start, end=args.end)
         fills = repo.deals(db, start=args.start, end=args.end + " 23:59:59")
         history = repo.deals(db)

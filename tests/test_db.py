@@ -101,3 +101,17 @@ def test_migration_is_idempotent(tmp_path):
     cols = {r[1] for r in db.conn.execute("PRAGMA table_info(account_snapshots)")}
     db.close()
     assert {"maintenance_margin", "margin_call_margin", "exposure_level"} <= cols
+
+
+def test_a_read_only_database_refuses_writes(tmp_path):
+    import sqlite3
+
+    import pytest
+
+    from ftrade.storage.db import Database
+
+    Database(tmp_path / "t.db").close()
+    with Database(tmp_path / "t.db", readonly=True) as ro:
+        assert ro.get_state("x") is None
+        with pytest.raises(sqlite3.OperationalError):
+            ro.set_state("x", "1")

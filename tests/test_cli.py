@@ -38,3 +38,24 @@ def test_sync_with_a_failed_account_exits_nonzero(config, monkeypatch):
 
     monkeypatch.setattr(SyncService, "sync_account_info", boom)
     assert cli.main(["-c", config, "sync", "--source", "mock", "--no-klines"]) == cli.EXIT_PARTIAL
+
+
+def test_a_mock_sync_refuses_a_database_holding_a_real_account(config, tmp_path):
+    from ftrade.storage.db import Database
+
+    with Database(tmp_path / "t.db") as db:
+        db.upsert("accounts", [{"acc_id": 1, "trd_env": "REAL"}])
+    assert cli.main(["-c", config, "sync", "--source", "mock", "--no-klines"]) == 1
+    with Database(tmp_path / "t.db") as db:
+        assert db.scalar("SELECT COUNT(*) FROM deals") == 0
+
+
+def test_serve_refuses_a_non_loopback_host_without_the_explicit_flag(config, monkeypatch):
+    import uvicorn
+
+    ran = []
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: ran.append(k))
+    assert cli.main(["-c", config, "serve", "--host", "0.0.0.0"]) == 1
+    assert ran == []
+    assert cli.main(["-c", config, "serve", "--host", "127.0.0.1"]) == 0
+    assert ran
