@@ -145,10 +145,11 @@ def rebuilt_change(
     as_of_day = date.fromisoformat(end_date)
     expired = positions["code"].map(lambda c: (option_expiry(c) or as_of_day) < as_of_day)
     held = positions[(positions["qty"].astype(float) != 0) & ~expired]
-    broker = {
-        c: (float(q), float(v or 0))
-        for c, q, v in zip(held["code"], held["qty"], held["market_val"], strict=True)
-    }
+    # Summed per code: the same symbol can sit in more than one account.
+    broker: dict[str, tuple[float, float]] = {}
+    for c, q, v in zip(held["code"], held["qty"], held["market_val"], strict=True):
+        bq, bv = broker.get(c, (0.0, 0.0))
+        broker[c] = (bq + float(q), bv + float(v or 0))
     now = open_lots(deals, as_of=as_of_day)
     if {c: q for c, q in zip(now["code"], now["qty"], strict=True)} != {
         c: round(q, 4) for c, (q, _v) in broker.items()

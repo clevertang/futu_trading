@@ -126,3 +126,14 @@ def test_no_rebuild_without_the_year_end_price_or_when_the_book_disagrees():
     deals = _deals([("US.X", "BUY", 10, 100.0, "2025-06-01 10:00:00")])
     assert _rebuild(deals, [("US.X", 10, 1300.0)], {}) is None
     assert _rebuild(deals, [("US.X", 12, 1560.0)], {"US.X": 110.0}) is None
+
+
+def test_a_code_held_in_two_accounts_is_summed_before_comparing_books():
+    deals = _deals(
+        [
+            ("US.X", "BUY", 10, 100.0, "2025-06-01 10:00:00"),
+            ("US.X", "SELL", 5, 120.0, "2026-03-01 10:00:00"),
+        ]
+    )
+    out = _rebuild(deals, [("US.X", 3, 390.0), ("US.X", 2, 260.0)], {"US.X": 110.0})
+    assert out is not None and out["pnl"] == 150.0
