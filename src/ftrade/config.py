@@ -24,8 +24,13 @@ class ConfigError(ValueError):
 
 
 def project_root() -> Path:
-    """src/ftrade/config.py -> 仓库根目录。"""
-    return Path(__file__).resolve().parents[2]
+    """The repo root in a source checkout, else the current directory.
+
+    An installed wheel lives in site-packages, where parents[2] is not a
+    place to look for config.yaml or to create data/.
+    """
+    repo = Path(__file__).resolve().parents[2]
+    return repo if (repo / "pyproject.toml").exists() else Path.cwd()
 
 
 @dataclass

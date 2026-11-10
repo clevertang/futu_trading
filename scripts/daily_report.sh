@@ -42,15 +42,25 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 
 # Append-only across years otherwise. One rotation keeps the recent history
 # readable without letting the file grow without bound.
-if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE")" -gt "$MAX_LOG_BYTES" ]; then
-  mv -f "$LOG_FILE" "$LOG_FILE.1"
-fi
+# launchd's own stdout/stderr file (install_launchd.sh) grows the same way.
+for f in "$LOG_FILE" "$LOG_DIR/launchd.log"; do
+  if [ -f "$f" ] && [ "$(wc -c < "$f")" -gt "$MAX_LOG_BYTES" ]; then
+    mv -f "$f" "$f.1"
+  fi
+done
+
+# OpenD's address from the same config the sync will use, not a literal.
+read -r OPEND_HOST OPEND_PORT < <(
+  "$REPO_DIR/.venv/bin/python" -c \
+    "from ftrade.config import load_config as l; c = l().futu; print(c.host, c.port)" \
+    2>/dev/null || echo "127.0.0.1 11111"
+)
 
 {
   echo "===== $(date '+%Y-%m-%d %H:%M:%S %z') ====="
 
-  if ! /usr/bin/nc -z -G 2 127.0.0.1 11111 2>/dev/null; then
-    echo "OpenD not reachable on 127.0.0.1:11111 -- is Futu_OpenD.app running and logged in?"
+  if ! /usr/bin/nc -z -G 2 "$OPEND_HOST" "$OPEND_PORT" 2>/dev/null; then
+    echo "OpenD not reachable on $OPEND_HOST:$OPEND_PORT -- is Futu_OpenD.app running and logged in?"
     echo "Skipping sync; nothing to report."
     exit 1
   fi

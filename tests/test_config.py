@@ -35,3 +35,26 @@ def test_an_unknown_key_is_warned_about_not_silently_dropped(tmp_path, caplog):
 def test_a_relative_db_path_resolves_against_the_config_files_folder(tmp_path):
     cfg = load_config(_write(tmp_path, "storage:\n  db_path: data/x.db\n"))
     assert cfg.db_path == tmp_path / "data" / "x.db"
+
+
+def test_the_example_documents_analysis_settings_under_analysis():
+    # Uncommenting margin_rates or net_asset_milestone where the example put
+    # them must take effect; under web: they were silently ignored.
+    from pathlib import Path
+
+    import yaml
+
+    text = (Path(__file__).resolve().parents[1] / "config.example.yaml").read_text("utf-8")
+    uncommented = "\n".join(
+        line.replace("  # ", "  ", 1)
+        if line.startswith("  # margin_rates")
+        or line.startswith("  #   US.")
+        or line.startswith("  # net_asset_milestone")
+        or line.startswith("  #   amount")
+        or line.startswith("  #   currency")
+        or line.startswith("  #   label")
+        else line
+        for line in text.splitlines()
+    )
+    data = yaml.safe_load(uncommented)
+    assert "margin_rates" in data["analysis"] and "net_asset_milestone" in data["analysis"]

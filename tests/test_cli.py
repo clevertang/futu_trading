@@ -59,3 +59,17 @@ def test_serve_refuses_a_non_loopback_host_without_the_explicit_flag(config, mon
     assert ran == []
     assert cli.main(["-c", config, "serve", "--host", "127.0.0.1"]) == 0
     assert ran
+
+
+def test_a_second_sync_is_refused_while_one_holds_the_lock(config, tmp_path):
+    # Two syncs writing one SQLite file corrupted this database once. The
+    # daily job's shell lock covered only itself, not a manual run.
+    import fcntl
+
+    lock = open(str(tmp_path / "t.db") + ".sync.lock", "w")  # noqa: SIM115
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        assert cli.main(["-c", config, "sync", "--source", "mock", "--no-klines"]) == 1
+    finally:
+        lock.close()
+    assert cli.main(["-c", config, "sync", "--source", "mock", "--no-klines"]) == 0

@@ -35,10 +35,10 @@ jobs:
       - run: pip install -e ".[dev]"
 
       - name: ruff check
-        run: ruff check --output-format=github src tests
+        run: ruff check --output-format=github src tests scripts
 
       - name: ruff format --check
-        run: ruff format --check src tests
+        run: ruff format --check src tests scripts
 
   readonly-guard:
     # This project's core safety property: no order-placing call may exist
@@ -129,6 +129,17 @@ jobs:
 
       - name: Check metadata
         run: twine check dist/*
+
+      - name: Smoke-test the installed wheel
+        # twine check passes on a wheel that is missing its schema and web
+        # assets; only running the installed package catches that.
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install dist/*.whl
+          mkdir /tmp/wheel-run && cd /tmp/wheel-run
+          /tmp/wheel-env/bin/ftrade sync --source mock --no-klines
+          /tmp/wheel-env/bin/ftrade report
+          /tmp/wheel-env/bin/python -c "import ftrade.web.app as a; assert (a.STATIC / 'index.html').exists()"
 
       - uses: actions/upload-artifact@v7
         with:

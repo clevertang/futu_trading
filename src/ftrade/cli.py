@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import shutil
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from rich.console import Console
@@ -58,7 +60,37 @@ def cmd_init(args, cfg) -> int:
     return 0
 
 
+@contextmanager
+def _sync_lock(cfg):
+    """Exclusive, non-blocking lock beside the DB file; yields False if held.
+
+    Two syncs writing one SQLite file is how this database got corrupted
+    once. The lock is advisory and dies with the process, so a crashed run
+    never leaves it stuck.
+    """
+    path = Path(str(cfg.db_path) + ".sync.lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 def cmd_sync(args, cfg) -> int:
+    with _sync_lock(cfg) as acquired:
+        if not acquired:
+            console.print("[red]另一个 sync 正在运行（同一个数据库），本次跳过。")
+            return 1
+        return _run_sync(args, cfg)
+
+
+def _run_sync(args, cfg) -> int:
     if args.source == "mock":
         with _db(cfg) as db:
             real = db.scalar("SELECT COUNT(*) FROM accounts WHERE trd_env = 'REAL'")
