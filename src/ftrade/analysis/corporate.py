@@ -94,10 +94,18 @@ def _writeoff_row(template: pd.Series, code: str, qty: float, when: str, long: b
     return row
 
 
+def _options_on(codes: pd.Series, underlying: str) -> pd.Series:
+    """Mask of option symbols whose underlying is exactly `underlying`.
+
+    A prefix test is not enough: ``US.T`` is a prefix of every ``US.TSLA...``.
+    """
+    return codes.map(lambda c: (parse_option(c) or {}).get("underlying") == underlying)
+
+
 def _strikes(df: pd.DataFrame, code: str, lo: str, hi: str) -> list[float]:
     """Strikes of `code`'s option fills dated in [lo, hi)."""
     when = df["create_time"].astype(str).str[:10]
-    rows = df[(when >= lo) & (when < hi) & df["code"].str.startswith(code) & (df["code"] != code)]
+    rows = df[(when >= lo) & (when < hi) & _options_on(df["code"], code)]
     out = []
     for c in rows["code"]:
         parsed = parse_option(c)
@@ -161,7 +169,9 @@ def apply_actions(deals: pd.DataFrame, actions: list[Action]) -> pd.DataFrame:
     df["code"] = df["code"].astype(str)
     date = df["create_time"].astype(str).str[:10]
 
-    for act in actions:
+    # Date order, not config order: a rename followed by a split of the new
+    # name only composes correctly if the rename has already happened.
+    for act in sorted(actions, key=lambda a: a.date or ""):
         if not act.date or not act.code:
             continue
         before = date < act.date
@@ -176,7 +186,7 @@ def apply_actions(deals: pd.DataFrame, actions: list[Action]) -> pd.DataFrame:
             df.loc[hit, "price"] = pd.to_numeric(df.loc[hit, "price"], errors="coerce") / act.ratio
 
             # Its options are re-struck by the same ratio.
-            opt = before & df["code"].str.startswith(act.code) & (df["code"] != act.code)
+            opt = before & _options_on(df["code"], act.code)
             for idx in df.index[opt]:
                 new_code = _split_option_code(df.at[idx, "code"], act.ratio)
                 if not new_code:

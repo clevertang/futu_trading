@@ -1036,3 +1036,37 @@ def test_fills_sharing_a_timestamp_keep_their_feed_order():
     trips = fifo_round_trips(df)
     assert len(trips) == 40
     assert open_lots(df).empty
+
+
+def test_split_does_not_restrike_options_on_a_longer_ticker():
+    # US.T is a prefix of US.TSLA; a split of AT&T must leave Tesla alone.
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame(
+        [
+            _deal("US.T", "BUY", 100, 20.0, "2025-01-02 10:00:00"),
+            _deal("US.T250117C20000", "SELL_SHORT", 1, 0.5, "2025-01-02 10:00:00"),
+            _deal("US.TSLA260116C400000", "SELL_SHORT", 1, 9.0, "2025-01-02 10:00:00"),
+        ]
+    )
+    out = apply_actions(deals, [Action(type="split", date="2025-02-01", code="US.T", ratio=2)])
+    codes = set(out["code"])
+    assert "US.TSLA260116C400000" in codes
+    assert "US.T250117C10000" in codes
+    tsla = out[out["code"] == "US.TSLA260116C400000"].iloc[0]
+    assert float(tsla["qty"]) == 1 and float(tsla["price"]) == 9.0
+
+
+def test_corporate_actions_apply_in_date_order_not_config_order():
+    # A rename A->B in 2024 followed by a split of B in 2025: the pre-rename
+    # A fills must end up split too, whichever order the config lists them.
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame([_deal("US.A", "BUY", 10, 100.0, "2023-06-01 10:00:00")])
+    actions = [
+        Action(type="split", date="2025-01-01", code="US.B", ratio=2),
+        Action(type="rename", date="2024-01-01", code="US.A", to="US.B"),
+    ]
+    row = apply_actions(deals, actions).iloc[0]
+    assert row["code"] == "US.B"
+    assert float(row["qty"]) == 20 and float(row["price"]) == 50.0

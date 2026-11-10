@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .instruments import market_of, underlying_of
+from .instruments import contract_multiplier, market_of, underlying_of
 
 # close_reason values that mean the position ended by settlement, not by a
 # fill the owner chose (see pnl._settlement_reason).
@@ -79,7 +79,9 @@ def behavior(
             d = d[_in_range(d["create_time"].astype(str), start, end)]
         d["date"] = d["create_time"].astype(str).str[:10]
         d["month"] = d["date"].str[:7]
-        d["turnover"] = d["qty"].astype(float) * d["price"].astype(float)
+        # Option prices are per share; a contract is `multiplier` shares.
+        mult = d["code"].astype(str).map(contract_multiplier)
+        d["turnover"] = d["qty"].astype(float) * d["price"].astype(float) * mult
         # deals carries no currency column, so a mixed HK/US history would
         # otherwise add HKD notional straight onto USD as if they were the
         # same unit -- exactly the bug already fixed once for round-trip P&L
