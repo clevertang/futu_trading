@@ -8,9 +8,21 @@ from .db import Database
 
 
 def latest_snapshot_date(db: Database, acc_id: int | None = None) -> str | None:
+    """The latest day positions were synced -- including a day with none held.
+
+    An empty book writes no rows, so the row table alone would fall back to
+    the last day something was held and present it as current. Each
+    successful position sync also records its date in `sync_state`.
+    """
     if acc_id is None:
-        return db.scalar("SELECT MAX(snap_date) FROM position_snapshots")
-    return db.scalar("SELECT MAX(snap_date) FROM position_snapshots WHERE acc_id = ?", (acc_id,))
+        rows = db.scalar("SELECT MAX(snap_date) FROM position_snapshots")
+        synced = db.scalar("SELECT MAX(value) FROM sync_state WHERE key LIKE 'positions_date:%'")
+    else:
+        rows = db.scalar(
+            "SELECT MAX(snap_date) FROM position_snapshots WHERE acc_id = ?", (acc_id,)
+        )
+        synced = db.get_state(f"positions_date:{acc_id}")
+    return max((d for d in (rows, synced) if d), default=None)
 
 
 def positions(

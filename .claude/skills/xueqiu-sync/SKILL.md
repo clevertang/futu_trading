@@ -45,8 +45,12 @@ These exist because the post is public, under a real name, and permanent.
 
 ```bash
 source .venv/bin/activate
-python -c "import sqlite3;from ftrade.config import load_config as l;c=l();print(sqlite3.connect(c.db_path).execute(\"select value from sync_state where key='last_sync_at'\").fetchone())"
+python -c "import sqlite3;from ftrade.config import load_config as l;c=l();print(sqlite3.connect(c.db_path).execute(\"select key, value from sync_state where key in ('last_sync_at','last_sync_status')\").fetchall())"
 ```
+
+`last_sync_status` is `partial` when some account or step failed (the
+sync then exits 3): `last_sync_at` moved, but not everything came
+through. Check `reports/daily.log` for the failed list before writing.
 
 If it is older than the last trading day and OpenD is up
 (`nc -z 127.0.0.1 11111`), run `scripts/daily_report.sh` (it holds the sync

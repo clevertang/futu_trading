@@ -118,13 +118,6 @@ class FutuGateway:
         futu = _futu()
         return getattr(futu.TrdEnv, self.cfg.futu.trd_env)
 
-    @staticmethod
-    def _check(ret, data, what: str) -> pd.DataFrame:
-        futu = _futu()
-        if ret != futu.RET_OK:
-            raise GatewayError(f"{what} 失败：{data}")
-        return data
-
     def _request(self, throttle: _Throttle, what: str, call):
         """限流 + 撞到频率限制时退避重试。call 返回 (ret, data) 或 (ret, data, page_key)。"""
         for attempt in range(MAX_RETRIES + 1):
@@ -150,7 +143,9 @@ class FutuGateway:
         rows: dict[int, dict[str, Any]] = {}
         for market in self.cfg.futu.markets:
             ctx = self._trade_ctx(market)
-            df = self._check(*ctx.get_acc_list(), what=f"获取账户列表({market})")
+            _ret, df = self._request(self._th_history, f"获取账户列表({market})", ctx.get_acc_list)[
+                :2
+            ]
             for _, r in df.iterrows():
                 acc_id = int(r["acc_id"])
                 self._acc_market.setdefault(acc_id, market)

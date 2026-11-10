@@ -23,6 +23,11 @@ from .sync import SyncService
 console = Console()
 
 
+# `ftrade sync` when some account or step failed; the data that did come
+# through is stored.
+EXIT_PARTIAL = 3
+
+
 def _db(cfg) -> Database:
     return Database(cfg.db_path)
 
@@ -58,6 +63,10 @@ def cmd_sync(args, cfg) -> int:
             with_klines=not args.no_klines,
             with_cash_flow=args.cash_flow,
         )
+    if stats.get("failed"):
+        # Not 0: a scheduled run must not log a partial pull as a success.
+        console.print("[yellow]同步部分失败：", stats)
+        return EXIT_PARTIAL
     console.print("[green]同步完成：", stats)
     return 0
 
@@ -126,7 +135,7 @@ def cmd_trips(args, cfg) -> int:
     if not trips:
         console.print("[yellow]还没有已平仓的完整交易")
         return 1
-    t = Table(title="已平仓交易（FIFO 配对，最近 50 笔）")
+    t = Table(title=f"已平仓交易（FIFO 配对，最近 {args.limit} 笔）")
     for col in (
         "代码",
         "名称",
@@ -278,6 +287,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-c", "--config", help="配置文件路径")
     p.add_argument("-v", "--verbose", action="store_true")
     p.add_argument("--acc-id", type=int, default=None, help="只看某个账户")
+    # Also accepted after the subcommand. SUPPRESS keeps a subcommand that
+    # was not given --acc-id from resetting the top-level value to None.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--acc-id", type=int, default=argparse.SUPPRESS, help="只看某个账户")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init", help="生成 config.yaml 并初始化数据库").set_defaults(func=cmd_init)
@@ -293,20 +306,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(func=cmd_sync)
 
-    sub.add_parser("positions", help="查看当前持仓").set_defaults(func=cmd_positions)
+    sub.add_parser("positions", parents=[common], help="查看当前持仓").set_defaults(
+        func=cmd_positions
+    )
 
-    s = sub.add_parser("deals", help="查看成交记录")
+    s = sub.add_parser("deals", parents=[common], help="查看成交记录")
     s.add_argument("--start")
     s.add_argument("--end")
     s.add_argument("--code")
     s.add_argument("--limit", type=int, default=50)
     s.set_defaults(func=cmd_deals)
 
-    s = sub.add_parser("trips", help="查看 FIFO 配对后的完整交易")
+    s = sub.add_parser("trips", parents=[common], help="查看 FIFO 配对后的完整交易")
     s.add_argument("--limit", type=int, default=30)
     s.set_defaults(func=cmd_trips)
 
-    s = sub.add_parser("report", help="输出组合分析报告")
+    s = sub.add_parser("report", parents=[common], help="输出组合分析报告")
     s.add_argument("--json", help="同时导出 JSON")
     s.set_defaults(func=cmd_report)
 
