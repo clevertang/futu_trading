@@ -1022,3 +1022,142 @@ def test_moneyness_falls_back_to_the_daily_close_when_the_underlying_is_not_held
     )[0]
 
     assert row["underlying_price"] == 77.94
+
+
+def test_fills_sharing_a_timestamp_keep_their_feed_order():
+    # Same-second buy/sell pairs (partial fills, day trades) must pair in the
+    # order the feed lists them. An unstable sort can put a sell ahead of its
+    # buy, which drops the sell as unmatched and leaves a phantom open lot.
+    rows = []
+    for _ in range(40):
+        rows.append(("US.A", "BUY", 1, 10.0, "2026-01-01 10:00:00"))
+        rows.append(("US.A", "SELL", 1, 11.0, "2026-01-01 10:00:00"))
+    df = _deals(rows)
+    trips = fifo_round_trips(df)
+    assert len(trips) == 40
+    assert open_lots(df).empty
+
+
+def test_split_does_not_restrike_options_on_a_longer_ticker():
+    # US.T is a prefix of US.TSLA; a split of AT&T must leave Tesla alone.
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame(
+        [
+            _deal("US.T", "BUY", 100, 20.0, "2025-01-02 10:00:00"),
+            _deal("US.T250117C20000", "SELL_SHORT", 1, 0.5, "2025-01-02 10:00:00"),
+            _deal("US.TSLA260116C400000", "SELL_SHORT", 1, 9.0, "2025-01-02 10:00:00"),
+        ]
+    )
+    out = apply_actions(deals, [Action(type="split", date="2025-02-01", code="US.T", ratio=2)])
+    codes = set(out["code"])
+    assert "US.TSLA260116C400000" in codes
+    assert "US.T250117C10000" in codes
+    tsla = out[out["code"] == "US.TSLA260116C400000"].iloc[0]
+    assert float(tsla["qty"]) == 1 and float(tsla["price"]) == 9.0
+
+
+def test_corporate_actions_apply_in_date_order_not_config_order():
+    # A rename A->B in 2024 followed by a split of B in 2025: the pre-rename
+    # A fills must end up split too, whichever order the config lists them.
+    from ftrade.analysis.corporate import Action, apply_actions
+
+    deals = pd.DataFrame([_deal("US.A", "BUY", 10, 100.0, "2023-06-01 10:00:00")])
+    actions = [
+        Action(type="split", date="2025-01-01", code="US.B", ratio=2),
+        Action(type="rename", date="2024-01-01", code="US.A", to="US.B"),
+    ]
+    row = apply_actions(deals, actions).iloc[0]
+    assert row["code"] == "US.B"
+    assert float(row["qty"]) == 20 and float(row["price"]) == 50.0
+
+
+def test_reconciliation_flags_positions_only_the_broker_holds():
+    from ftrade.analysis.report import reconcile
+
+    lots = pd.DataFrame([{"code": "US.A", "qty": 100.0, "avg_cost": 1.0}])
+    pos = pd.DataFrame([{"code": "US.A", "qty": 100.0}, {"code": "US.B", "qty": 50.0}])
+    assert reconcile(lots, pos) == [{"code": "US.B", "local_fifo_qty": 0.0, "broker_qty": 50.0}]
+
+
+def test_reconciliation_sums_a_code_held_across_accounts():
+    from ftrade.analysis.report import reconcile
+
+    lots = pd.DataFrame([{"code": "US.A", "qty": 150.0, "avg_cost": 1.0}])
+    pos = pd.DataFrame([{"code": "US.A", "qty": 100.0}, {"code": "US.A", "qty": 50.0}])
+    assert reconcile(lots, pos) == []
+
+
+def test_reconciliation_with_no_local_history_still_reports_holdings():
+    from ftrade.analysis.report import reconcile
+
+    pos = pd.DataFrame([{"code": "US.B", "qty": 50.0}])
+    empty = pd.DataFrame(columns=["code", "qty", "avg_cost"])
+    assert reconcile(empty, pos) == [{"code": "US.B", "local_fifo_qty": 0.0, "broker_qty": 50.0}]
+
+
+def test_bare_dividend_rows_are_not_counted_as_stock_dividends():
+    # Futu books money-market fund distributions as "Dividend" with no remark
+    # and large IN/OUT swings; only "Cash Dividend" is a stock dividend.
+    from ftrade.analysis.cash import cash_summary
+    from ftrade.analysis.fx import FX
+
+    flows = pd.DataFrame(
+        [
+            {
+                "clearing_date": "2024-03-01",
+                "cashflow_type": "Dividend",
+                "amount": 5000.0,
+                "direction": "IN",
+                "currency": "USD",
+                "remark": "",
+            },
+            {
+                "clearing_date": "2024-03-02",
+                "cashflow_type": "Cash Dividend",
+                "amount": 10.0,
+                "direction": "IN",
+                "currency": "USD",
+                "remark": "AAPL DIVIDENDS",
+            },
+        ]
+    )
+    out = cash_summary(flows, FX({"USD": 1.0}, "USD"))
+    assert out["dividends"] == 10.0
+
+
+def test_weights_use_gross_exposure_so_short_options_cannot_push_them_past_one():
+    from ftrade.analysis.fx import FX
+    from ftrade.analysis.portfolio import summary
+
+    pos = pd.DataFrame(
+        [
+            {
+                "code": "US.A",
+                "stock_name": "A",
+                "qty": 100,
+                "cost_price": 1.0,
+                "nominal_price": 1.0,
+                "pl_ratio": 0.0,
+                "market_val": 100.0,
+                "pl_val": 0.0,
+                "currency": "USD",
+                "position_market": "US",
+            },
+            {
+                "code": "US.A261113C1000",
+                "stock_name": "A C",
+                "qty": -1,
+                "cost_price": 0.2,
+                "nominal_price": 0.2,
+                "pl_ratio": 0.0,
+                "market_val": -20.0,
+                "pl_val": 0.0,
+                "currency": "USD",
+                "position_market": "US",
+            },
+        ]
+    )
+    s = summary(pos, FX({"USD": 1.0}, "USD"))
+    assert s["top1_weight"] <= 1.0
+    assert s["effective_positions"] >= 1.0

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import pandas as pd
+
 from ..storage import repo
 from ..storage.db import Database
 from . import cash as cash_mod
@@ -119,6 +121,39 @@ def _last_prices(db, pos, codes) -> dict[str, float]:
     return out
 
 
+def reconcile(lots, pos) -> list[dict]:
+    """Codes where the locally rebuilt book and the broker disagree on quantity.
+
+    Both directions count: a holding the broker reports with no deal history
+    behind it (a transfer-in, an allotment, history not pulled far enough) is
+    exactly the gap this check exists to surface. The broker side is summed
+    per code, since the same symbol can sit in more than one account. With
+    no position snapshot at all there is nothing to compare against.
+    """
+    if pos is None or pos.empty:
+        return []
+    local = (
+        {}
+        if lots is None or lots.empty
+        else lots.groupby("code")["qty"].sum().astype(float).to_dict()
+    )
+    broker = (
+        {}
+        if pos is None or pos.empty
+        else pd.to_numeric(pos["qty"], errors="coerce")
+        .fillna(0.0)
+        .groupby(pos["code"])
+        .sum()
+        .to_dict()
+    )
+    out = []
+    for code in sorted(set(local) | set(broker)):
+        lq, bq = float(local.get(code, 0.0)), float(broker.get(code, 0.0))
+        if abs(lq - bq) > 1e-6:
+            out.append({"code": code, "local_fifo_qty": lq, "broker_qty": bq})
+    return out
+
+
 def _drop_expired(pos):
     """Positions without option contracts already past expiry on the snapshot date.
 
@@ -181,16 +216,7 @@ def build_report(
     curve = metrics.equity_curve(snaps, fx, start=start, end=end)
 
     # 本地 FIFO 推算的持仓 vs 券商返回的持仓，对不上通常意味着历史成交没拉全
-    lots = open_lots(dls)
-    reconciliation = []
-    if not lots.empty and not pos.empty:
-        broker = dict(zip(pos["code"], pos["qty"], strict=True))
-        for _, r in lots.iterrows():
-            b = float(broker.get(r["code"], 0) or 0)
-            if abs(b - float(r["qty"])) > 1e-6:
-                reconciliation.append(
-                    {"code": r["code"], "local_fifo_qty": float(r["qty"]), "broker_qty": b}
-                )
+    reconciliation = reconcile(open_lots(dls), pos)
 
     per_position_risk = {}
     for code in pos["code"].tolist() if not pos.empty else []:

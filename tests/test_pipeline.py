@@ -675,3 +675,21 @@ def test_without_long_options_the_margin_check_uses_net_assets():
     eq = account_equity(pd.DataFrame([snap]), FX({"HKD": 1.0}, "HKD"), "HKD")
     assert eq["equity_with_loan"] == eq["total_assets"]
     assert eq["margin_cushion"] == pytest.approx(269701.08 - 180000.0)
+
+
+def test_option_turnover_includes_the_contract_multiplier():
+    from ftrade.analysis.trades import behavior
+
+    deals = pd.DataFrame(
+        [
+            {
+                "code": "US.TQQQ261113C57000",
+                "trd_side": "SELL_SHORT",
+                "qty": 1,
+                "price": 2.5,
+                "create_time": "2026-11-09 10:00:00",
+            }
+        ]
+    )
+    out = behavior(pd.DataFrame(), deals)
+    assert out["turnover_by_month"]["2026-11"] == pytest.approx(250.0)

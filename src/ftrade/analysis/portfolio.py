@@ -17,8 +17,10 @@ def enrich(positions: pd.DataFrame, fx: FX) -> pd.DataFrame:
     df["pl_val_base"] = [
         fx.to_base(v, cur) for v, cur in zip(df["pl_val"], df["currency"], strict=True)
     ]
-    total = df["market_val_base"].dropna().sum()
-    df["weight"] = df["market_val_base"] / total if total else 0.0
+    # Weight against gross exposure: short options carry negative market value,
+    # and netting them into the denominator pushed weights past 100%.
+    gross = df["market_val_base"].dropna().abs().sum()
+    df["weight"] = df["market_val_base"] / gross if gross else 0.0
     return df.sort_values("market_val_base", ascending=False).reset_index(drop=True)
 
 

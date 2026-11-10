@@ -97,7 +97,7 @@ class MockGateway:
                         "status": "OK",
                     }
                 )
-        return pd.DataFrame(rows).sort_values("create_time").reset_index(drop=True)
+        return pd.DataFrame(rows).sort_values("create_time", kind="stable").reset_index(drop=True)
 
     # ---------- Gateway 接口 ----------
 
