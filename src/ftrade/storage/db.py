@@ -41,13 +41,32 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+def connect_readonly(db_path: str | Path) -> sqlite3.Connection:
+    uri = f"{Path(db_path).resolve().as_uri()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, detect_types=sqlite3.PARSE_DECLTYPES, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
+
+
 class Database:
     """薄封装：建表 + upsert + DataFrame 查询。"""
 
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, readonly: bool = False):
+        """`readonly` opens the file without write access and skips migrate().
+
+        For readers that may run while a sync is writing (the web panel, the
+        fact-sheet script): migrate()'s DDL from a second process during a
+        long write is how this database was corrupted once, and a reader has
+        no business changing the schema anyway.
+        """
         self.path = Path(db_path)
-        self.conn = connect(self.path)
-        self.migrate()
+        self.readonly = readonly
+        if readonly:
+            self.conn = connect_readonly(self.path)
+        else:
+            self.conn = connect(self.path)
+            self.migrate()
 
     def migrate(self) -> None:
         self.conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))

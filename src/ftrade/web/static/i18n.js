@@ -61,6 +61,8 @@ window.I18N = {
     obsMsg_frequency: "{perMonth} deals/month on average -- not really a low-frequency strategy anymore; mind the friction costs.",
     obsMsg_data_integrity: "Local FIFO disagrees with the broker for {codes} -- history may be incomplete, or a split/spin-off is involved. Try `ftrade sync --full`.",
     obsMsg_drawdown: "Max drawdown over the snapshot window: {maxDrawdown}.",
+    obsTopic_none: "Overall",
+    obsMsg_none: "No risk rule triggered.",
 
     optionsMonitor: "Options monitor", optionsMonitorHint: "Days to expiry, moneyness and premium decay for every open contract",
     optionsMonitorNote: "Facts about each contract's expiry, moneyness and premium change -- not a recommendation to close or roll. That call is yours.",
@@ -172,6 +174,8 @@ window.I18N = {
     obsMsg_frequency: "月均成交 {perMonth} 笔，已经不太像低频策略，注意摩擦成本。",
     obsMsg_data_integrity: "本地 FIFO 推算持仓与券商不一致（{codes}），历史成交可能没拉全或含拆股/红股，可以试试 ftrade sync --full。",
     obsMsg_drawdown: "快照区间最大回撤 {maxDrawdown}。",
+    obsTopic_none: "总体",
+    obsMsg_none: "未触发任何风险规则",
 
     optionsMonitor: "期权到期监控", optionsMonitorHint: "每份持仓合约的到期天数、实虚值与权利金变动",
     optionsMonitorNote: "以上是每份合约到期日、实虚值、权利金变动的事实数据——不包含是否平仓或展期的建议，这是你自己的交易决策。",
@@ -281,6 +285,8 @@ window.I18N = {
     obsMsg_frequency: "月平均 {perMonth} 件の約定。低頻度戦略とは言えない水準で、摩擦コストに注意してください。",
     obsMsg_data_integrity: "ローカル FIFO 推計と証券会社の残高が {codes} で一致しません。履歴が不完全か、分割・スピンオフの可能性があります。ftrade sync --full を試してください。",
     obsMsg_drawdown: "スナップショット期間中の最大ドローダウン: {maxDrawdown}。",
+    obsTopic_none: "全体",
+    obsMsg_none: "リスクルールに該当なし",
 
     optionsMonitor: "オプション満期モニター", optionsMonitorHint: "保有中の各契約の残存日数・実質/名目・プレミアム変動",
     optionsMonitorNote: "各契約の満期・実質/名目・プレミアム変動という事実データです。決済や乗り換えの推奨ではありません——それはご自身の判断です。",
