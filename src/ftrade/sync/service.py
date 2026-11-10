@@ -153,10 +153,10 @@ class SyncService:
 
     def sync_positions(self, acc_id: int) -> int:
         df = self.gw.get_positions(acc_id)
+        snap = _today()
         if df is None or df.empty:
             log.info("账户 %s 当前无持仓", acc_id)
-            return 0
-        snap = _today()
+            df = pd.DataFrame()
         rows = [
             {
                 "snap_date": snap,
@@ -181,7 +181,12 @@ class SyncService:
             }
             for _, r in df.iterrows()
         ]
-        n = self.db.upsert("position_snapshots", rows)
+        # Replace, not upsert: a position closed since an earlier sync today
+        # must not linger in today's snapshot.
+        n = self.db.replace_rows(
+            "position_snapshots", "snap_date = ? AND acc_id = ?", (snap, acc_id), rows
+        )
+        self.db.set_state(f"positions_date:{acc_id}", snap)
         log.info("账户 %s 持仓快照 %d 条（%s）", acc_id, n, snap)
         return n
 
@@ -275,7 +280,9 @@ class SyncService:
         df = self.db.query(
             "SELECT o.order_id FROM orders o "
             "LEFT JOIN order_fees f ON f.order_id = o.order_id "
-            "WHERE o.acc_id = ? AND f.order_id IS NULL",
+            # Futu returns fees only for orders that filled; asking for the
+            # rest re-sends every cancelled order on every run.
+            "WHERE o.acc_id = ? AND f.order_id IS NULL AND COALESCE(o.dealt_qty, 0) > 0",
             [acc_id],
         )
         if df.empty:
@@ -288,7 +295,7 @@ class SyncService:
                 fees = self.gw.get_order_fees(acc_id, chunk)
             except Exception as exc:
                 log.warning("账户 %s 订单费用查询失败：%s", acc_id, exc)
-                break
+                raise RuntimeError(f"订单费用查询失败：{exc}") from exc
             if fees is None or fees.empty:
                 continue
             rows = [
@@ -322,8 +329,15 @@ class SyncService:
         """
         key = f"cashflow_last_date:{acc_id}"
         last = self.db.get_state(key)
-        begin = date.fromisoformat(last) + timedelta(days=1) if last else date.fromisoformat(start)
-        finish = date.fromisoformat(end) if end else date.fromisoformat(_today())
+        first = date.fromisoformat(start)
+        today = date.fromisoformat(_today())
+        if last:
+            # Re-read the last few days: entries can post late against a
+            # clearing date already walked. cashflow_id dedups the overlap.
+            begin = max(first, date.fromisoformat(last) - timedelta(days=OVERLAP_DAYS - 1))
+        else:
+            begin = first
+        finish = date.fromisoformat(end) if end else today
         total = 0
         day = begin
         while day <= finish:
@@ -337,7 +351,7 @@ class SyncService:
                 log.warning(
                     "账户 %s 资金流水 %s 失败，已中断（下次从此处续）：%s", acc_id, iso, exc
                 )
-                break
+                raise RuntimeError(f"资金流水 {iso} 失败：{exc}") from exc
             if df is not None and not df.empty:
                 rows = [
                     {
@@ -356,7 +370,9 @@ class SyncService:
                     if _text(r.get("cashflow_id"))
                 ]
                 total += self.db.upsert("cash_flows", rows)
-            self.db.set_state(key, iso)
+            # Today is still open: walk it, but do not checkpoint past it.
+            if day < today:
+                self.db.set_state(key, iso)
             day += timedelta(days=1)
         if total:
             log.info("账户 %s 资金流水 %d 条（至 %s）", acc_id, total, self.db.get_state(key))
@@ -528,8 +544,18 @@ class SyncService:
                 positions += self.sync_positions(acc_id)
                 deals += self.sync_deals(acc_id, full=full)
                 orders += self.sync_orders(acc_id, full=full)
+            except Exception as exc:
+                log.warning("账户 %s 同步失败，已跳过：%s", acc_id, exc)
+                failed.append(f"{acc_id}: {exc}")
+                continue
+            # Fees and cash flows are independent of each other: one failing
+            # must neither hide the other nor pass for a clean run.
+            try:
                 fees += self.sync_order_fees(acc_id)
-                if with_cash_flow:
+            except Exception as exc:
+                failed.append(f"{acc_id}: {exc}")
+            if with_cash_flow:
+                try:
                     # Bounded by the account's own trading history: a closed
                     # account settles nothing after its last deal.
                     first = self.db.scalar(
@@ -538,9 +564,8 @@ class SyncService:
                     cash += self.sync_cash_flows(
                         acc_id, str(first)[:10] if first else self.cfg.sync.deals_start
                     )
-            except Exception as exc:
-                log.warning("账户 %s 同步失败，已跳过：%s", acc_id, exc)
-                failed.append(f"{acc_id}: {exc}")
+                except Exception as exc:
+                    failed.append(f"{acc_id}: {exc}")
         stats.update(
             positions=positions, deals=deals, orders=orders, order_fees=fees, cash_flows=cash
         )
@@ -550,4 +575,7 @@ class SyncService:
             stats["klines"] = self.sync_klines()
             stats["year_end_prices"] = self.sync_year_end_prices()
         self.db.set_state("last_sync_at", _now())
+        # last_sync_at says when data was last pulled; this says whether all of
+        # it came through, so a freshness check can tell the two apart.
+        self.db.set_state("last_sync_status", "partial" if failed else "ok")
         return stats

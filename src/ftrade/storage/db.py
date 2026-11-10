@@ -111,6 +111,26 @@ class Database:
             conn.executemany(sql, payload)
         return len(payload)
 
+    def replace_rows(
+        self, table: str, where: str, params: Sequence[Any], rows: Iterable[dict[str, Any]]
+    ) -> int:
+        """Delete the rows matching `where`, then insert `rows`, atomically.
+
+        For snapshots: a re-run must leave exactly what the source returned
+        this time, not the union of every run that day.
+        """
+        rows = [r for r in rows if r]
+        with self.tx() as conn:
+            conn.execute(f"DELETE FROM {table} WHERE {where}", tuple(params))
+            if rows:
+                cols = list(rows[0].keys())
+                placeholders = ", ".join("?" for _ in cols)
+                conn.executemany(
+                    f"INSERT OR REPLACE INTO {table} ({', '.join(cols)}) VALUES ({placeholders})",
+                    [tuple(r.get(c) for c in cols) for r in rows],
+                )
+        return len(rows)
+
     def set_state(self, key: str, value: str) -> None:
         with self.tx() as conn:
             conn.execute(

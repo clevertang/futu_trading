@@ -55,6 +55,15 @@ fi
     exit 1
   fi
 
-  "$FTRADE" sync --cash-flow || { echo "sync failed, see above"; exit 1; }
-  "$FTRADE" report --json "$JSON_FILE"
+  # 3 = partial: some account or step failed, the rest is stored. Still
+  # report on what came through, but do not let the run read as clean.
+  "$FTRADE" sync --cash-flow
+  sync_rc=$?
+  if [ "$sync_rc" -ne 0 ] && [ "$sync_rc" -ne 3 ]; then
+    echo "sync failed (exit $sync_rc), see above"
+    exit 1
+  fi
+  "$FTRADE" report --json "$JSON_FILE" || exit 1
+  [ "$sync_rc" -eq 3 ] && { echo "sync was partial, see the failed list above"; exit 3; }
+  exit 0
 } >> "$LOG_FILE" 2>&1

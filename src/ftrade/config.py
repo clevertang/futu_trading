@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +12,15 @@ from typing import Any
 import yaml
 
 DEFAULT_CONFIG_NAMES = ("config.yaml", "config.yml", "config.example.yaml")
+
+# Futu's hard ceiling for one history query.
+MAX_WINDOW_DAYS = 90
+
+log = logging.getLogger(__name__)
+
+
+class ConfigError(ValueError):
+    """A config value that would make the tool misbehave rather than fail."""
 
 
 def project_root() -> Path:
@@ -79,7 +90,20 @@ class Config:
 def _section(raw: dict[str, Any], key: str, cls):
     data = raw.get(key) or {}
     known = {f for f in cls.__dataclass_fields__}
-    return cls(**{k: v for k, v in data.items() if k in known})
+    # A misplaced or misspelled key would otherwise fall back to the default
+    # without a word -- e.g. margin_rates nested under web: instead of analysis:.
+    for k in sorted(set(data) - known):
+        log.warning("配置项 %s.%s 不认识，已忽略", key, k)
+    # YAML reads an unquoted 2020-01-01 as a date; every consumer wants text.
+    return cls(
+        **{k: v.isoformat() if isinstance(v, dt.date) else v for k, v in data.items() if k in known}
+    )
+
+
+def _validate(cfg: Config) -> None:
+    days = cfg.sync.window_days
+    if not isinstance(days, int) or not 1 <= days <= MAX_WINDOW_DAYS:
+        raise ConfigError(f"sync.window_days 必须在 1..{MAX_WINDOW_DAYS} 之间，当前为 {days!r}")
 
 
 def load_config(path: str | os.PathLike[str] | None = None) -> Config:
@@ -95,11 +119,14 @@ def load_config(path: str | os.PathLike[str] | None = None) -> Config:
     if cfg_path.exists():
         raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
 
-    return Config(
+    cfg = Config(
         futu=_section(raw, "futu", FutuConfig),
         storage=_section(raw, "storage", StorageConfig),
         sync=_section(raw, "sync", SyncConfig),
         analysis=_section(raw, "analysis", AnalysisConfig),
         web=_section(raw, "web", WebConfig),
-        root=root,
+        # Relative paths in a config file mean relative to that file.
+        root=cfg_path.resolve().parent if path is not None else root,
     )
+    _validate(cfg)
+    return cfg
