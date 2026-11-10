@@ -11,7 +11,7 @@ Xueqiu for the owner to finish and publish.
 
 Account: https://xueqiu.com/u/7394617568 (`sz_tangxin`, real-name verified).
 The owner is logged in to Xueqiu in their own Chrome; work through Claude in
-Chrome (load the `chrome-browser` skill first).
+Chrome (load the `claude-in-chrome` skill first).
 
 ## Hard rules
 
