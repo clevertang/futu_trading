@@ -27,6 +27,8 @@ Everything here is a what-if on today's numbers, not a prediction.
 
 from __future__ import annotations
 
+import math
+
 from .fx import FX
 from .instruments import parse_option
 
@@ -89,6 +91,83 @@ def index_fall_to_call(holdings: list[dict], equity_with_loan: float, requiremen
     return round(min(cushion / slope, cap), 4)
 
 
+def sell_to_target(
+    held: list[dict], equity_with_loan: float, requirement: float, target: float
+) -> list[dict]:
+    """Value of each holding to sell, alone, so the index fall to a call is `target`.
+
+    Selling at market leaves equity with loan value unchanged and removes
+    rate*v from the requirement and v*beta*(1-rate) from the slope, so the
+    distance (cushion / slope) reaches `target` at
+
+        v = (target * slope - cushion) / (rate + target * beta * (1 - rate))
+
+    clamped to [0, the holding's value]; `reaches_target` is False when even
+    selling all of it falls short. Each row is an alternative, not a mix.
+    """
+    cushion = equity_with_loan - requirement
+    slope = sum(h["value"] * h["beta"] * (1 - (h["maintenance"] or 0.0)) for h in held)
+    out = []
+    for h in held:
+        r, b = h["maintenance"] or 0.0, h["beta"]
+        v = (target * slope - cushion) / (r + target * b * (1 - r))
+        out.append(
+            {
+                "code": h["code"],
+                "value": round(min(max(v, 0.0), h["value"]), 2),
+                "reaches_target": v <= h["value"],
+            }
+        )
+    return out
+
+
+def fall_at_distance(
+    held: list[dict], equity_with_loan: float, requirement: float, distance: float
+) -> float | None:
+    """Index fall from today after which only `distance` of further fall is left.
+
+    Each holding loses value*beta*f and its requirement falls with it; the
+    remaining distance is recomputed on those numbers and bisected for f.
+    0.0 when the room left is already `distance` or less.
+    """
+    now = index_fall_to_call(held, equity_with_loan, requirement)
+    if now is None:
+        return None
+    if now <= distance:
+        return 0.0
+
+    def left(f: float) -> float:
+        after = [{**h, "value": h["value"] * (1 - h["beta"] * f)} for h in held]
+        loss = sum(h["value"] * h["beta"] * f for h in held)
+        drop = sum(h["value"] * (h["maintenance"] or 0.0) * h["beta"] * f for h in held)
+        return index_fall_to_call(after, equity_with_loan - loss, requirement - drop) or 0.0
+
+    lo, hi = 0.0, now
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if left(mid) > distance else (lo, mid)
+    return round(lo, 4)
+
+
+def _alert(held, ewl, mm, distance, alert, fx, prices, currency_of) -> dict:
+    trigger, target = float(alert["trigger"]), float(alert["target"])
+    rows = sell_to_target(held, ewl, mm, target)
+    for row in rows:
+        price = (prices or {}).get(row["code"])
+        cur = currency_of(row["code"]) if currency_of else None
+        if price and cur:
+            local = row["value"] / (fx.to_base(1.0, cur) or 1.0)
+            row["shares"] = math.ceil(local / float(price) - 1e-9)
+            row["price"] = float(price)
+    return {
+        "trigger": trigger,
+        "target": target,
+        "triggered": distance is not None and distance <= trigger,
+        "sell": rows,
+        "trigger_fall": fall_at_distance(held, ewl, mm, trigger),
+    }
+
+
 def margin_model(
     holdings: list[dict],
     equity: dict,
@@ -96,6 +175,7 @@ def margin_model(
     fx: FX,
     prices: dict[str, float] | None = None,
     currency_of=None,
+    alert: dict | None = None,
 ) -> dict | None:
     """Per-symbol view of the account's margin, or None without rates or requirements.
 
@@ -135,6 +215,10 @@ def margin_model(
         "index_fall_to_call": index_fall_to_call(held, ewl, mm),
         "headroom": [],
     }
+    if alert and "trigger" in alert and "target" in alert:
+        out["alert"] = _alert(
+            held, ewl, mm, out["index_fall_to_call"], alert, fx, prices, currency_of
+        )
 
     excess = ewl - im if im is not None else None
     out["initial_excess"] = round(excess, 2) if excess is not None else None

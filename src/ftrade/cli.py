@@ -273,6 +273,30 @@ def cmd_serve(args, cfg) -> int:
 # ---------- 入口 ----------
 
 
+def cmd_margin_watch(args, cfg) -> int:
+    from datetime import datetime
+
+    from . import watch
+
+    if args.test_email:
+        watch.send_test_mail(cfg)
+        console.print("[green]测试邮件已发出，请查收")
+        return 0
+    now = datetime.now().astimezone()
+    if not args.force and not watch.market_open(now):
+        return 0  # outside US hours: do not even connect to OpenD
+    log_path = project_root() / "reports" / "margin_watch.log"
+    with _db(cfg) as db:
+        if args.opend_down:
+            return watch.report_blind(cfg, db, now, "OpenD 未连接", log_path=log_path)
+        try:
+            with build_gateway(cfg, args.source) as gw:
+                return watch.run_watch(cfg, db, gw, now, force=args.force, log_path=log_path)
+        except Exception as exc:
+            watch.report_blind(cfg, db, now, f"查询出错：{type(exc).__name__}", log_path=log_path)
+            raise
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ftrade", description="富途只读持仓/交易分析平台")
     p.add_argument("-c", "--config", help="配置文件路径")
@@ -309,6 +333,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("report", help="输出组合分析报告")
     s.add_argument("--json", help="同时导出 JSON")
     s.set_defaults(func=cmd_report)
+
+    s = sub.add_parser("margin-watch", help="美股盘中检查追保距离，过近时发邮件提醒")
+    s.add_argument("--force", action="store_true", help="不在交易时段也检查一次")
+    s.add_argument("--test-email", action="store_true", help="只发一封测试邮件")
+    s.add_argument("--opend-down", action="store_true", help=argparse.SUPPRESS)
+    s.add_argument("--source", choices=["futu", "mock"], default="futu", help="数据源")
+    s.set_defaults(func=cmd_margin_watch)
 
     s_serve = sub.add_parser("serve", help="启动本地 Web 面板")
     s_serve.add_argument("--host", help="覆盖配置里的监听地址")

@@ -81,6 +81,26 @@ scripts/install_launchd.sh uninstall  # 卸载
 脚本自带互斥锁：一轮没跑完时下一轮直接跳过，而不是两个进程同时写同一个
 SQLite 文件（这个库曾经就是这么被写坏过一次的）。
 
+### 盘中追保提醒
+
+每天一次的同步跑在美股收盘后，看不到盘中。`ftrade margin-watch` 在美股常规
+交易时段检查"按指数算离追保还有多少"，≤ `margin_alert.trigger`（默认 3%）时给
+自己发一封邮件，写明单独卖多少 TQQQ 或 QQQ 能回到 `target`（默认 5%）。同一
+档距离一天只发一次，再恶化 0.5 个百分点才再发。它只查资金和持仓，写进临时库，
+不会覆盖每日快照。
+
+发信用 Gmail 应用专用密码，只存在钥匙串里（见 `config.example.yaml` 的
+`margin_alert` 注释），然后：
+
+```bash
+scripts/install_margin_watch.sh             # 每 10 分钟跑一次，非交易时段直接退出
+scripts/install_margin_watch.sh test-email  # 发一封测试邮件，确认通道
+scripts/install_margin_watch.sh status
+```
+
+看板「资金构成」里的「追保提醒线」给出 QQQ 跌到多少时只剩 3%，可以照着在
+富途 App 里设一个 QQQ 价格提醒作为第二道提醒。
+
 ## 结构
 
 ```

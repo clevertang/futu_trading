@@ -225,6 +225,7 @@ def build_report(
         fx,
         prices=_last_prices(db, pos, getattr(a, "margin_rates", None) or {}),
         currency_of=currency_of,
+        alert=getattr(a, "margin_alert", None),
     )
     bh["realized_by_code"] = _merge_unrealized(
         bh.get("realized_by_code", []), pf.get("holdings_detail", []), dividends

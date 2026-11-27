@@ -537,6 +537,16 @@ function renderAll() {
       ...(mmod && mmod.index_fall_to_call != null ? [[T("cIndexFall"),
         fill("indexFallValue", { n: pct(mmod.index_fall_to_call, 1) }),
         mmod.index_fall_to_call < 0.1 ? "down" : ""]] : []),
+      // The alert line: the QQQ price at which only `trigger` of room is left,
+      // so it can be mirrored as a price alert in the Futu app.
+      ...(mmod && mmod.alert && mmod.alert.trigger_fall != null ? (() => {
+        const a = mmod.alert;
+        const q = (mmod.headroom || []).find(h => h.code === "US.QQQ" && h.price);
+        const v = q
+          ? fill("alertPriceValue", { p: (q.price * (1 - a.trigger_fall)).toFixed(2), t: pct(a.trigger, 0) })
+          : fill("alertFallValue", { f: pct(a.trigger_fall, 1), t: pct(a.trigger, 0) });
+        return [[T("cAlertLine"), v, a.triggered ? "down" : ""]];
+      })() : []),
       ...(mmod ? (mmod.headroom || []).map(h => [
         fill("cHeadroom", { c: esc(String(h.code).replace(/^[A-Z]+\./, "")) }),
         h.max_shares != null

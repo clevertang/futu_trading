@@ -53,6 +53,11 @@ class AnalysisConfig:
     # gives account totals): {"US.TQQQ": {"initial": 0.5, "maintenance": 0.45,
     # "beta": 3}}. Empty disables the per-symbol model.
     margin_rates: dict = field(default_factory=dict)
+    # Alert when the index fall to a call is at or below `trigger`, with the
+    # sell-down that restores `target`: {"trigger": 0.03, "target": 0.05,
+    # "email_to": ..., "smtp_user": ..., "keychain_service": "tangxin-client"}.
+    # Empty disables it. Needs margin_rates.
+    margin_alert: dict = field(default_factory=dict)
 
 
 @dataclass

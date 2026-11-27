@@ -81,3 +81,13 @@ web:
   # margin_rates:
   #   US.TQQQ: {initial: 0.50, maintenance: 0.45, beta: 3}
   #   US.QQQ:  {initial: 0.40, maintenance: 0.30}
+  # 盘中追保提醒（ftrade margin-watch，需要上面的 margin_rates）：按指数算离追保
+  # ≤ trigger 时给自己发邮件，并算出卖多少能回到 target。发信密码是 Gmail 应用
+  # 专用密码，只放在 macOS 钥匙串里（service 默认 tangxin-client），不要写进本文件：
+  #   security add-generic-password -U -s tangxin-client -a you@gmail.com -w
+  # margin_alert:
+  #   trigger: 0.03
+  #   target: 0.05
+  #   email_to: you@gmail.com
+  #   smtp_user: you@gmail.com
+  #   keychain_service: tangxin-client
