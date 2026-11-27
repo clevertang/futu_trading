@@ -319,10 +319,20 @@ class SyncService:
         Progress is checkpointed per account so an interrupted backfill resumes
         instead of starting over, and weekends are skipped since they settle
         nothing.
+
+        Futu posts a clearing date's entries a day or two after that date, so
+        a query made early returns nothing for it -- monthly margin interest
+        was lost that way. Each run therefore re-reads the last OVERLAP_DAYS
+        before the checkpoint; rows are keyed on cashflow_id, so re-reading
+        is idempotent.
         """
         key = f"cashflow_last_date:{acc_id}"
         last = self.db.get_state(key)
-        begin = date.fromisoformat(last) + timedelta(days=1) if last else date.fromisoformat(start)
+        begin = (
+            date.fromisoformat(last) - timedelta(days=OVERLAP_DAYS)
+            if last
+            else date.fromisoformat(start)
+        )
         finish = date.fromisoformat(end) if end else date.fromisoformat(_today())
         total = 0
         day = begin
