@@ -90,3 +90,82 @@ def test_selling_long_options_turns_their_value_into_loan_value():
     assert sold["proceeds"] == pytest.approx(14399.07, abs=0.01)
     assert sold["index_fall_to_call"] == pytest.approx(0.210, abs=0.001)
     assert sold["index_fall_to_call"] > m["index_fall_to_call"]
+
+
+ALERT = {"trigger": 0.03, "target": 0.05}
+SLOPE = TQQQ * 3 * 0.55 + QQQ * 1 * 0.70
+RATED = {"US.TQQQ": (0.45, 3.0), "US.QQQ": (0.30, 1.0)}
+
+
+def _held(tqqq=TQQQ, qqq=QQQ):
+    return [
+        {"code": "US.TQQQ", "value": tqqq, "maintenance": 0.45, "beta": 3.0},
+        {"code": "US.QQQ", "value": qqq, "maintenance": 0.30, "beta": 1.0},
+    ]
+
+
+def _alert(ewl, **kw):
+    return margin_model(HOLDINGS, _equity(ewl), RATES, FXU, alert=ALERT, **kw)["alert"]
+
+
+def test_sell_to_target_restores_target_distance():
+    ewl = MM + 0.028 * SLOPE
+    rows = {r["code"]: r for r in _alert(ewl)["sell"]}
+    v = rows["US.TQQQ"]["value"]
+    after = [{**h, "value": h["value"] - v} if h["code"] == "US.TQQQ" else h for h in _held()]
+    assert index_fall_to_call(after, ewl, MM - 0.45 * v) == pytest.approx(0.05, abs=1e-4)
+    assert rows["US.TQQQ"]["reaches_target"] is True
+
+
+def test_a_holding_too_small_to_restore_the_target_says_so():
+    # Only $2,095 of QQQ is held here: selling all of it still falls short.
+    rows = {r["code"]: r for r in _alert(MM + 0.028 * SLOPE)["sell"]}
+    assert rows["US.QQQ"]["value"] == pytest.approx(QQQ, abs=0.01)
+    assert rows["US.QQQ"]["reaches_target"] is False
+
+
+def test_sell_to_target_is_zero_when_already_safe():
+    a = _alert(MM + 0.08 * SLOPE)
+    assert a["triggered"] is False
+    assert all(r["value"] == 0.0 for r in a["sell"])
+
+
+def test_alert_triggered_below_trigger():
+    a = _alert(MM + 0.028 * SLOPE)
+    assert a["triggered"] is True
+    assert {r["code"] for r in a["sell"]} == {"US.TQQQ", "US.QQQ"}
+    assert a["trigger"] == 0.03 and a["target"] == 0.05
+
+
+def test_alert_absent_without_config():
+    assert "alert" not in margin_model(HOLDINGS, _equity(31634.0), RATES, FXU)
+
+
+def test_sell_rows_carry_share_counts_rounded_up_when_priced():
+    a = _alert(
+        MM + 0.028 * SLOPE,
+        prices={"US.TQQQ": 64.26},
+        currency_of=lambda code: "USD",
+    )
+    rows = {r["code"]: r for r in a["sell"]}
+    t = rows["US.TQQQ"]
+    assert t["shares"] * 64.26 >= t["value"] > (t["shares"] - 1) * 64.26
+    assert "shares" not in rows["US.QQQ"]  # no price for QQQ: value only
+
+
+def test_fall_at_distance_leaves_requested_room():
+    ewl = MM + 0.10 * SLOPE
+    f = _alert(ewl)["trigger_fall"]
+    assert 0 < f < 0.10
+    after = [{**h, "value": h["value"] * (1 - h["beta"] * f)} for h in _held()]
+    loss = sum(h["value"] * h["beta"] * f for h in _held())
+    req = MM - sum(h["value"] * h["maintenance"] * h["beta"] * f for h in _held())
+    assert index_fall_to_call(after, ewl - loss, req) == pytest.approx(0.03, abs=1e-4)
+
+
+def test_sell_when_already_under_the_line_is_finite():
+    a = _alert(MM - 500.0)
+    assert a["triggered"] is True
+    assert a["trigger_fall"] == 0.0
+    for r in a["sell"]:
+        assert 0 < r["value"] < float("inf")
