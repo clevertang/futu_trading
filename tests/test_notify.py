@@ -61,8 +61,9 @@ def test_send_mail_uses_keychain_and_ssl():
         seen["args"] = (service, account)
         return "secret-app-pw"
 
-    notify.send_mail("me@example.com", "me@example.com", "subj", "body",
-                     password_fn=pw, smtp_factory=FakeSMTP)
+    notify.send_mail(
+        "me@example.com", "me@example.com", "subj", "body", password_fn=pw, smtp_factory=FakeSMTP
+    )
     assert seen["args"] == ("tangxin-client", "me@example.com")
     assert FakeSMTP.sent[0] == ("login", "me@example.com", "secret-app-pw")
     assert FakeSMTP.sent[1][:3] == ("send", "me@example.com", "subj")
@@ -70,8 +71,14 @@ def test_send_mail_uses_keychain_and_ssl():
 
 def test_password_never_in_message():
     FakeSMTP.sent = []
-    notify.send_mail("me@example.com", "me@example.com", "subj", "body",
-                     password_fn=lambda s, a: "secret-app-pw", smtp_factory=FakeSMTP)
+    notify.send_mail(
+        "me@example.com",
+        "me@example.com",
+        "subj",
+        "body",
+        password_fn=lambda s, a: "secret-app-pw",
+        smtp_factory=FakeSMTP,
+    )
     send = [e for e in FakeSMTP.sent if e[0] == "send"][0]
     assert all("secret-app-pw" not in str(part) for part in send)
 

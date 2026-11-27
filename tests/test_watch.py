@@ -49,7 +49,12 @@ def _cfg(alert=True):
     codes = MockGateway(cfg).get_positions(1)["code"].tolist()
     cfg.analysis.margin_rates = {c: {"initial": 0.5, "maintenance": 0.4} for c in codes}
     cfg.analysis.margin_alert = (
-        {"trigger": 0.03, "target": 0.05, "email_to": "me@example.com", "smtp_user": "me@example.com"}
+        {
+            "trigger": 0.03,
+            "target": 0.05,
+            "email_to": "me@example.com",
+            "smtp_user": "me@example.com",
+        }
         if alert
         else {}
     )
@@ -85,8 +90,15 @@ def test_watch_writes_no_snapshots_to_main_db(tmp_path):
     cfg = _cfg()
     db = _main_db(tmp_path, cfg)
     before = (_dump(db, "position_snapshots"), _dump(db, "account_snapshots"))
-    watch.run_watch(cfg, db, ThinGateway(cfg), OPEN, sender=Outbox(), notifier=lambda *a: None,
-                    log_path=tmp_path / "w.log")
+    watch.run_watch(
+        cfg,
+        db,
+        ThinGateway(cfg),
+        OPEN,
+        sender=Outbox(),
+        notifier=lambda *a: None,
+        log_path=tmp_path / "w.log",
+    )
     assert (_dump(db, "position_snapshots"), _dump(db, "account_snapshots")) == before
 
 
@@ -110,8 +122,18 @@ def test_watch_without_alert_config_sends_nothing(tmp_path):
     cfg = _cfg(alert=False)
     db = _main_db(tmp_path, cfg)
     out = Outbox()
-    assert watch.run_watch(cfg, db, ThinGateway(cfg), OPEN, sender=out,
-                           notifier=lambda *a: None, log_path=tmp_path / "w.log") == 0
+    assert (
+        watch.run_watch(
+            cfg,
+            db,
+            ThinGateway(cfg),
+            OPEN,
+            sender=out,
+            notifier=lambda *a: None,
+            log_path=tmp_path / "w.log",
+        )
+        == 0
+    )
     assert out.mails == []
 
 
@@ -120,8 +142,18 @@ def test_watch_outside_hours_does_nothing(tmp_path):
     db = _main_db(tmp_path, cfg)
     out = Outbox()
     closed = datetime(2026, 12, 5, 11, 0, tzinfo=NY)
-    assert watch.run_watch(cfg, db, ThinGateway(cfg), closed, sender=out,
-                           notifier=lambda *a: None, log_path=tmp_path / "w.log") == 0
+    assert (
+        watch.run_watch(
+            cfg,
+            db,
+            ThinGateway(cfg),
+            closed,
+            sender=out,
+            notifier=lambda *a: None,
+            log_path=tmp_path / "w.log",
+        )
+        == 0
+    )
     assert out.mails == []
 
 
@@ -145,9 +177,17 @@ class ExpiringCallGateway(ThinGateway):
 
     def get_positions(self, acc_id):
         df = MockGateway.get_positions(self, acc_id)
-        row = {**df.iloc[1].to_dict(), "code": self.opt, "stock_name": "AAPL call",
-               "qty": 1.0, "can_sell_qty": 1.0, "nominal_price": 500.0,
-               "cost_price": 400.0, "diluted_cost": 400.0, "market_val": self.opt_val}
+        row = {
+            **df.iloc[1].to_dict(),
+            "code": self.opt,
+            "stock_name": "AAPL call",
+            "qty": 1.0,
+            "can_sell_qty": 1.0,
+            "nominal_price": 500.0,
+            "cost_price": 400.0,
+            "diluted_cost": 400.0,
+            "market_val": self.opt_val,
+        }
         return pd.concat([df, pd.DataFrame([row])], ignore_index=True)
 
     def get_account_info(self, acc_id, currency):
@@ -155,9 +195,14 @@ class ExpiringCallGateway(ThinGateway):
         opt = self.opt_val * float((self.cfg.analysis.fx_rates or {}).get("USD", 1.0))
         stock = info["market_val"] - opt
         total = stock * (0.4 + self.room) + opt
-        return {**info, "total_assets": round(total, 2), "cash": round(total - info["market_val"], 2),
-                "initial_margin": stock * 0.5, "maintenance_margin": stock * 0.4,
-                "margin_call_margin": stock * 0.4}
+        return {
+            **info,
+            "total_assets": round(total, 2),
+            "cash": round(total - info["market_val"], 2),
+            "initial_margin": stock * 0.5,
+            "maintenance_margin": stock * 0.4,
+            "margin_call_margin": stock * 0.4,
+        }
 
 
 def test_option_expiring_on_the_ny_session_date_still_counts_as_held(tmp_path, monkeypatch):
@@ -170,8 +215,15 @@ def test_option_expiring_on_the_ny_session_date_still_counts_as_held(tmp_path, m
     db = _main_db(tmp_path, cfg)
     monkeypatch.setattr(service, "_today", lambda: "2026-12-03")
     out = Outbox()
-    watch.run_watch(cfg, db, ExpiringCallGateway(cfg), OPEN, sender=out,
-                    notifier=lambda *a: None, log_path=tmp_path / "w.log")
+    watch.run_watch(
+        cfg,
+        db,
+        ExpiringCallGateway(cfg),
+        OPEN,
+        sender=out,
+        notifier=lambda *a: None,
+        log_path=tmp_path / "w.log",
+    )
     assert len(out.mails) == 1 and "离追保" in out.mails[0][1]
 
 
@@ -208,6 +260,7 @@ def test_crossing_into_a_call_mails_again(tmp_path):
     gw = ThinGateway(cfg)
     gw.room = -0.01  # under maintenance: distance 0
     out = Outbox()
-    watch.run_watch(cfg, db, gw, OPEN, sender=out, notifier=lambda *a: None,
-                    log_path=tmp_path / "w.log")
+    watch.run_watch(
+        cfg, db, gw, OPEN, sender=out, notifier=lambda *a: None, log_path=tmp_path / "w.log"
+    )
     assert len(out.mails) == 1

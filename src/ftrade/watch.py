@@ -101,14 +101,20 @@ def run_watch(
     distance = model.get("index_fall_to_call")
     if not alert:
         return report_blind(
-            cfg, db, now, "无法计算追保距离（资金或持仓查询失败）",
-            sender=sender, log_path=log_path,
+            cfg,
+            db,
+            now,
+            "无法计算追保距离（资金或持仓查询失败）",
+            sender=sender,
+            log_path=log_path,
         )
 
     day_key = STATE_PREFIX + session
     last = db.get_state(day_key)
-    worse = last is not None and distance is not None and (
-        distance <= float(last) - REALERT_STEP or (distance == 0 < float(last))
+    worse = (
+        last is not None
+        and distance is not None
+        and (distance <= float(last) - REALERT_STEP or (distance == 0 < float(last)))
     )
     due = alert["triggered"] and (last is None or worse)
     status = "触发" if alert["triggered"] else "正常"
