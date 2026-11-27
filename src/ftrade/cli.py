@@ -285,11 +285,16 @@ def cmd_margin_watch(args, cfg) -> int:
     now = datetime.now().astimezone()
     if not args.force and not watch.market_open(now):
         return 0  # outside US hours: do not even connect to OpenD
-    with _db(cfg) as db, build_gateway(cfg, args.source) as gw:
-        return watch.run_watch(
-            cfg, db, gw, now, force=args.force,
-            log_path=project_root() / "reports" / "margin_watch.log",
-        )
+    log_path = project_root() / "reports" / "margin_watch.log"
+    with _db(cfg) as db:
+        if args.opend_down:
+            return watch.report_blind(cfg, db, now, "OpenD 未连接", log_path=log_path)
+        try:
+            with build_gateway(cfg, args.source) as gw:
+                return watch.run_watch(cfg, db, gw, now, force=args.force, log_path=log_path)
+        except Exception as exc:
+            watch.report_blind(cfg, db, now, f"查询出错：{type(exc).__name__}", log_path=log_path)
+            raise
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -332,6 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("margin-watch", help="美股盘中检查追保距离，过近时发邮件提醒")
     s.add_argument("--force", action="store_true", help="不在交易时段也检查一次")
     s.add_argument("--test-email", action="store_true", help="只发一封测试邮件")
+    s.add_argument("--opend-down", action="store_true", help=argparse.SUPPRESS)
     s.add_argument("--source", choices=["futu", "mock"], default="futu", help="数据源")
     s.set_defaults(func=cmd_margin_watch)
 

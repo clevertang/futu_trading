@@ -65,11 +65,15 @@ def alert_message(
 
 def keychain_password(service: str, account: str) -> str:
     """The app password from the login Keychain. Raises when it is missing."""
-    r = subprocess.run(
-        ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        r = subprocess.run(
+            ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
+            capture_output=True,
+            text=True,
+            timeout=20,  # a Keychain prompt would otherwise block every later run
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"读取钥匙串 {service} 超时（可能在等授权弹窗）") from exc
     if r.returncode != 0 or not r.stdout.strip():
         raise RuntimeError(f"钥匙串里没有 {service} / {account} 的发信密码")
     return r.stdout.strip()

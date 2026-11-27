@@ -43,7 +43,14 @@ def _report_base(cfg) -> str | None:
     return "USD" if "USD" in rates else None
 
 
-def _intraday_report(cfg, gateway) -> dict:
+def _intraday_report(cfg, gateway, session: str) -> dict:
+    """Report on a throwaway DB whose snapshots carry the New York `session` date.
+
+    Sync stamps snapshots with the local (Tokyo) date, which is already the
+    next day from 10:00 EST to the close. The report drops options that
+    expired before the snapshot date, so a call expiring that session looked
+    gone and its value was counted as loan value.
+    """
     with tempfile.TemporaryDirectory(prefix="ftrade-watch-") as tmp:
         scratch = Database(Path(tmp) / "watch.db")
         try:
@@ -55,6 +62,9 @@ def _intraday_report(cfg, gateway) -> dict:
                     svc.sync_positions(acc_id)
                 except Exception as exc:  # a closed account must not stop the check
                     log.warning("账户 %s 盯盘查询失败，已跳过：%s", acc_id, exc)
+            with scratch.tx() as conn:
+                for table in ("position_snapshots", "account_snapshots"):
+                    conn.execute(f"UPDATE {table} SET snap_date = ?", (session,))
             return build_report(scratch, cfg, base=_report_base(cfg))
         finally:
             scratch.close()
@@ -84,19 +94,23 @@ def run_watch(
         log.info("未配置 margin_alert 或 margin_rates，跳过盯盘")
         return 0
 
-    rep = _intraday_report(cfg, gateway)
+    session = now.astimezone(NY).date().isoformat()
+    rep = _intraday_report(cfg, gateway, session)
     model = rep.get("margin_model") or {}
     alert = model.get("alert")
     distance = model.get("index_fall_to_call")
     if not alert:
-        _log_line(log_path, now, "无法计算追保距离（缺少资金或持仓数据）")
-        return 0
+        return report_blind(
+            cfg, db, now, "无法计算追保距离（资金或持仓查询失败）",
+            sender=sender, log_path=log_path,
+        )
 
-    day_key = STATE_PREFIX + now.astimezone(NY).date().isoformat()
+    day_key = STATE_PREFIX + session
     last = db.get_state(day_key)
-    due = alert["triggered"] and (
-        last is None or (distance is not None and distance <= float(last) - REALERT_STEP)
+    worse = last is not None and distance is not None and (
+        distance <= float(last) - REALERT_STEP or (distance == 0 < float(last))
     )
+    due = alert["triggered"] and (last is None or worse)
     status = "触发" if alert["triggered"] else "正常"
     _log_line(log_path, now, f"离追保 {notify._pct(distance)} | {status}{' | 发信' if due else ''}")
     if not due:
@@ -120,6 +134,44 @@ def run_watch(
         return 1
     db.set_state(day_key, f"{distance if distance is not None else 0.0:.4f}")
     log.info("已发送追保提醒：%s", subject)
+    return 0
+
+
+def report_blind(
+    cfg,
+    db: Database,
+    now: datetime,
+    reason: str,
+    sender=notify.send_mail,
+    log_path: Path = Path("reports/margin_watch.log"),
+) -> int:
+    """Tell the owner, once per New York day, that the session is not being watched.
+
+    A watch that cannot see the account must not stay quiet: the November
+    calls happened overnight, and a silent failure would only show at 08:30.
+    """
+    if not market_open(now):
+        return 0
+    a = cfg.analysis.margin_alert or {}
+    _log_line(log_path, now, f"盯盘失效：{reason}")
+    key = "margin_watch_blind:" + now.astimezone(NY).date().isoformat()
+    if not a.get("email_to") or not a.get("smtp_user") or db.get_state(key):
+        return 0
+    try:
+        sender(
+            a["email_to"],
+            a["smtp_user"],
+            f"【ftrade】盯盘失效：{reason}",
+            f"时间：{now.astimezone(NY):%Y-%m-%d %H:%M} 纽约\n"
+            f"原因：{reason}\n\n"
+            "今天剩下的交易时段可能没有追保提醒，请自己在富途 App 里留意保证金。"
+            "恢复后会照常检查；今天不会再为这个问题发信。",
+            service=a.get("keychain_service", notify.DEFAULT_SERVICE),
+        )
+    except Exception as exc:
+        log.error("盯盘失效提醒发送失败：%s", exc)
+        return 1
+    db.set_state(key, reason)
     return 0
 
 

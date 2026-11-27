@@ -21,6 +21,13 @@ if [ -f "$FLAG" ]; then
   exec "$FTRADE" margin-watch --test-email
 fi
 
-# Skip quietly when OpenD is down; the daily job already reports that.
-/usr/bin/nc -z -G 2 127.0.0.1 11111 2>/dev/null || exit 0
-exec "$FTRADE" margin-watch
+# OpenD down during the session means nobody is watching: say so (once a day,
+# and only in US hours -- the command checks both).
+if ! /usr/bin/nc -z -G 2 127.0.0.1 11111 2>/dev/null; then
+  exec "$FTRADE" margin-watch --opend-down
+fi
+
+# launchd will not start the next run while one is still going, so a hang
+# (the futu SDK retries a failed connect forever) would end the night's
+# checks. Cap each run at 5 minutes; macOS has no `timeout`, perl's alarm does.
+exec /usr/bin/perl -e 'alarm shift; exec @ARGV' 300 "$FTRADE" margin-watch

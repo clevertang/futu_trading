@@ -83,3 +83,16 @@ def test_missing_keychain_item_raises(monkeypatch):
     monkeypatch.setattr(notify.subprocess, "run", fake_run)
     with pytest.raises(RuntimeError, match="钥匙串"):
         notify.keychain_password("tangxin-client", "me@example.com")
+
+
+def test_keychain_lookup_is_bounded(monkeypatch):
+    seen = {}
+
+    def fake_run(*a, **k):
+        seen.update(k)
+        raise subprocess.TimeoutExpired(a, k.get("timeout"))
+
+    monkeypatch.setattr(notify.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError, match="钥匙串"):
+        notify.keychain_password("tangxin-client", "me@example.com")
+    assert seen.get("timeout")
