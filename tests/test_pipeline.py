@@ -675,3 +675,43 @@ def test_without_long_options_the_margin_check_uses_net_assets():
     eq = account_equity(pd.DataFrame([snap]), FX({"HKD": 1.0}, "HKD"), "HKD")
     assert eq["equity_with_loan"] == eq["total_assets"]
     assert eq["margin_cushion"] == pytest.approx(269701.08 - 180000.0)
+
+
+class _LateLedgerGateway(MockGateway):
+    """Futu posts a clearing date's ledger entries a day or two after that date."""
+
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.posted: dict[str, list[dict]] = {}
+
+    def get_cash_flow(self, acc_id: int, clearing_date: str) -> pd.DataFrame:
+        return pd.DataFrame(self.posted.get(clearing_date, []))
+
+
+def test_cash_flow_posted_after_its_date_was_first_queried_is_still_stored(tmp_path):
+    # The daily job queried 2026-10-01 before Futu had posted September's
+    # margin interest there, so the checkpoint moved past it and the charge
+    # was never stored.
+    cfg = load_config()
+    db = Database(tmp_path / "t.db")
+    gw = _LateLedgerGateway(cfg)
+    svc = SyncService(db, gw, cfg)
+
+    svc.sync_cash_flows(1, "2026-10-01", end="2026-10-01")  # nothing posted yet
+    gw.posted["2026-10-01"] = [
+        {
+            "cashflow_id": "618608",
+            "clearing_date": "2026-10-01",
+            "settlement_date": "2026-10-01",
+            "currency": "USD",
+            "cashflow_type": "Others",
+            "cashflow_direction": "OUT",
+            "cashflow_amount": -94.51,
+            "cashflow_remark": "Interest In Sep.",
+        }
+    ]
+    svc.sync_cash_flows(1, "2026-10-01", end="2026-10-02")
+    stored = db.query("SELECT remark, amount FROM cash_flows")
+    db.close()
+
+    assert stored.to_dict("records") == [{"remark": "Interest In Sep.", "amount": -94.51}]
