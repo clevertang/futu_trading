@@ -50,6 +50,7 @@ Tests and lint:
 pytest tests -q
 pytest tests/test_pnl.py::test_fifo_matching -q     # a single test
 ruff check src tests
+ruff format --check src tests     # CI fails on unformatted files too
 ```
 
 Run the suite **more than once** when touching the mock gateway or anything
@@ -143,9 +144,10 @@ Documented in the README and worth preserving in any analysis work:
   prose are currently Chinese — match the surrounding file rather than
   mass-translating as a side effect of another change.
 - **Every fix goes through a pull request.** Do not commit to `main` directly.
-- Ruff's rule set is pinned in `pyproject.toml` (`E4, E7, E9, F, I, UP`) because
-  ruff widens its defaults between releases. The tree is **not** `ruff format`
-  clean; reformatting is a separate change, not a drive-by.
+- Ruff's rule set is pinned in `pyproject.toml` (`E4, E7, E9, F, I, UP, B, SIM`)
+  because ruff widens its defaults between releases. The tree is `ruff format`
+  clean and CI's Lint job runs `ruff format --check src tests`, so format the
+  files you touch before pushing.
 - Config resolution order is `config.yaml` → `config.yml` → `config.example.yaml`,
   so the example file makes the tool runnable before `ftrade init`.
 - `config.yaml`, `data/`, and `reports/` are gitignored — they hold account data.
