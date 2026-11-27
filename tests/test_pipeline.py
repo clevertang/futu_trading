@@ -715,3 +715,17 @@ def test_cash_flow_posted_after_its_date_was_first_queried_is_still_stored(tmp_p
     db.close()
 
     assert stored.to_dict("records") == [{"remark": "Interest In Sep.", "amount": -94.51}]
+
+
+def test_report_carries_the_alert_trigger_when_configured(tmp_path):
+    cfg = load_config()
+    codes = MockGateway(cfg).get_positions(1)["code"].tolist()
+    cfg.analysis.margin_rates = {c: {"initial": 0.5, "maintenance": 0.4} for c in codes}
+    cfg.analysis.margin_alert = {"trigger": 0.03, "target": 0.05}
+    db = Database(tmp_path / "t.db")
+    SyncService(db, MockGateway(cfg), cfg).sync_all(full=True)
+    alert = build_report(db, cfg)["margin_model"]["alert"]
+    db.close()
+
+    assert alert["triggered"] is False  # the mock account holds plenty of cash
+    assert alert["trigger_fall"] > 0.03
