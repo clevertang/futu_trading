@@ -10,10 +10,14 @@ browser (the skill has the snippet) and saved as JSON: a list of
 only the running total, so a post's growth exists only if it was captured
 more than once -- capture on every sync.
 
-`report` answers "what kind of post gets read" from the owner's own history:
-it splits posts by a title feature and compares median reads. It is a
-backtest over a few dozen posts, with official recommendation dominating
-reach, so a gap is a hint to try, not a finding. Posts younger than
+`report` answers "what kind of post gets read" from the owner's own history.
+Reads are bimodal: with a handful of followers, a post the feed does not
+pick up stays in the hundreds, and one it does pick up reaches thousands or
+tens of thousands -- often days after publishing. A median over that mix
+mostly says how many hits fell on each side, so each title feature is shown
+both ways: median reads and how many posts were picked up (reads at or above
+PICKUP_READS). It is a backtest over a few dozen posts, so a gap is a hint to
+try, not a finding. Posts younger than
 --min-age-days are left out of the comparison because their reads have not
 settled. Read-only: it touches nothing but files under reports/xueqiu/.
 """
@@ -32,6 +36,9 @@ ROOT = Path(__file__).resolve().parents[1]
 LOG = ROOT / "reports" / "xueqiu" / "post_stats.jsonl"
 NOTES = ROOT / "reports" / "xueqiu" / "experiments.json"
 FIELDS = ("reads", "likes", "comments", "reposts", "favorites")
+# Followers-only posts settle at a few hundred reads; every post above this
+# was carried by the feed or a wave of profile visits.
+PICKUP_READS = 2000
 
 # What a title says, as regexes. Kept deliberately coarse: with this few
 # posts, finer categories would leave one or two posts in each.
@@ -47,6 +54,10 @@ FEATURES = {
 
 def title_features(title: str) -> dict[str, bool]:
     return {k: bool(re.search(p, title)) for k, p in FEATURES.items()}
+
+
+def picked_up(post: dict) -> bool:
+    return post["reads"] >= PICKUP_READS
 
 
 def load(log: Path = LOG) -> list[dict]:
@@ -92,19 +103,21 @@ def latest(rows: list[dict]) -> list[dict]:
 
 
 def compare(posts: list[dict], min_age_days: int = 3) -> list[dict]:
-    """Median reads with and without each title feature, among settled posts."""
+    """Median reads and pickups with and without each title feature, among settled posts."""
     settled = [p for p in posts if p["age_days"] >= min_age_days]
     out = []
     for feature in FEATURES:
-        has = [p["reads"] for p in settled if title_features(p["title"])[feature]]
-        not_ = [p["reads"] for p in settled if not title_features(p["title"])[feature]]
+        has = [p for p in settled if title_features(p["title"])[feature]]
+        not_ = [p for p in settled if not title_features(p["title"])[feature]]
         out.append(
             {
                 "feature": feature,
                 "n_with": len(has),
                 "n_without": len(not_),
-                "median_with": median(has) if has else None,
-                "median_without": median(not_) if not_ else None,
+                "median_with": median(p["reads"] for p in has) if has else None,
+                "median_without": median(p["reads"] for p in not_) if not_ else None,
+                "picked_with": sum(map(picked_up, has)),
+                "picked_without": sum(map(picked_up, not_)),
             }
         )
     return out
@@ -123,12 +136,24 @@ def _report(min_age_days: int) -> None:
     print(f"# 雪球长文数据（最近一次抓取 {max(r['captured_at'] for r in rows)}）\n")
 
     print("## 每篇（最新）\n")
-    print("| 发布 | 天数 | 阅读 | 赞 | 讨论 | 收藏 | 标题 |")
-    print("|---|---:|---:|---:|---:|---:|---|")
+    print("| 发布 | 时间 | 天数 | 阅读 | 被推荐 | 赞 | 讨论 | 收藏 | 标题 |")
+    print("|---|---|---:|---:|:-:|---:|---:|---:|---|")
     for p in posts:
         print(
-            f"| {p['published'][:10]} | {p['age_days']} | {p['reads']:,} | {p['likes']} "
+            f"| {p['published'][:10]} | {p['published'][11:16]} | {p['age_days']} "
+            f"| {p['reads']:,} | {'✓' if picked_up(p) else ''} | {p['likes']} "
             f"| {p['comments']} | {p['favorites']} | {p['title']} |"
+        )
+
+    streak = 0
+    for p in posts:
+        if picked_up(p):
+            break
+        streak += 1
+    if streak:
+        print(
+            f"\n最近连续 {streak} 篇没有被推荐（阅读 < {PICKUP_READS:,}），"
+            "这些帖子基本只有关注者和搜索在看。"
         )
 
     # 2024's posts were read far more than 2026's whatever their titles, so
@@ -137,13 +162,16 @@ def _report(min_age_days: int) -> None:
     for label, group in [("全部", posts)] + [
         (y, [p for p in posts if p["published"][:4] == y]) for y in years
     ]:
-        print(f"\n## 标题特征回测：{label}（只算发布满 {min_age_days} 天的帖子，中位数阅读）\n")
-        print("| 特征 | 有：篇数 | 有：中位数 | 无：篇数 | 无：中位数 |")
+        print(
+            f"\n## 标题特征回测：{label}（只算发布满 {min_age_days} 天的帖子；"
+            f"被推荐 = 阅读 ≥ {PICKUP_READS:,}）\n"
+        )
+        print("| 特征 | 有：被推荐/篇数 | 有：中位数 | 无：被推荐/篇数 | 无：中位数 |")
         print("|---|---:|---:|---:|---:|")
         for c in compare(group, min_age_days):
             print(
-                f"| {c['feature']} | {c['n_with']} | {_fmt(c['median_with'])} "
-                f"| {c['n_without']} | {_fmt(c['median_without'])} |"
+                f"| {c['feature']} | {c['picked_with']}/{c['n_with']} | {_fmt(c['median_with'])} "
+                f"| {c['picked_without']}/{c['n_without']} | {_fmt(c['median_without'])} |"
             )
     print(
         "\n样本只有几十篇，官方推荐对阅读的影响远大于标题，2024 年和现在的流量环境也不同；"

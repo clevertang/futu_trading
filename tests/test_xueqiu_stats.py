@@ -75,3 +75,21 @@ def test_compare_reports_medians_only_for_posts_old_enough():
     hot = out["hot_name"]
     assert (hot["n_with"], hot["n_without"]) == (2, 2)
     assert hot["median_with"] == 31500 and hot["median_without"] == 200
+
+
+def test_compare_counts_how_many_posts_were_picked_up():
+    # Reads are bimodal: followers-only posts stay in the hundreds, a post the
+    # feed picks up reaches thousands. The pickup rate is the honest measure.
+    posts = [
+        {**_post("2026-11-01 强平", "2026-11-01 18:01", 78000), "age_days": 20},
+        {**_post("2026-11-06 强平", "2026-11-06 13:28", 390), "age_days": 20},
+        {**_post("2026-11-10 call", "2026-11-10 17:52", 316), "age_days": 18},
+    ]
+    out = {c["feature"]: c for c in stats.compare(posts, min_age_days=3)}
+    assert out["loss"]["picked_with"] == 1 and out["loss"]["n_with"] == 2
+    assert out["loss"]["picked_without"] == 0 and out["loss"]["n_without"] == 1
+
+
+def test_picked_up_uses_the_threshold():
+    assert stats.picked_up({"reads": stats.PICKUP_READS})
+    assert not stats.picked_up({"reads": stats.PICKUP_READS - 1})

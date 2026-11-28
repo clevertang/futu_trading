@@ -149,6 +149,31 @@ record it with `xueqiu_stats.py note "TITLE" "what was tried"`, and judge it
 only once the post is a few days old. A title still states the period's
 facts — no loss, gain or drama the numbers do not show (hard rule 4).
 
+**What actually decides reach (measured 2026-11-28).** The account has 18
+followers. A post the feed does not pick up settles at 100–800 reads; one it
+picks up gets 5,000–78,000, often **days later** (the 10-20 post had 45
+reads two days in and 31,600 two weeks later). Likes and comments stay near
+zero either way, so 阅读 is feed impressions, not engaged readers. Judge a
+change by the report's 被推荐 (picked up / posts) columns, never by one
+post's reads or by a median, and only after a week. What the data shows so
+far, as hints, not rules:
+
+- Every 2026 post naming PDD/拼多多 or another hot name in the title was
+  picked up (3/3); posts naming only TQQQ/QQQ mostly were not. When the
+  period genuinely involves a widely followed name or event (NVDA, 中期选举,
+  加息), put it in the title — never invent a link (hard rule 4).
+- The biggest hit (11-01) is the only post with a redacted original Futu App
+  screenshot of a broker event (强平通知). Using one is the owner's call
+  each time, redacted as then; it is not covered by hard rule 6's images.
+- Six posts in a row about the same TQQQ loss story were all followers-only.
+  Fresh angles (a tool story, a news event, a number people search for) did
+  better than another day of the same log.
+- Two posts ten hours apart (11-25 and 11-26) both stayed under 100. Merge
+  same-day thoughts into one post; use a comment for a short follow-up.
+- `$TQQQ$`-style stock tags (they put a post on the stock's discussion page)
+  have been tried once, with unrelated names; tagging the post's actual
+  symbols is an untested experiment worth one post.
+
 ### 6. Review, then save as draft
 
 Show the complete title, body, image path and the list of `【】`
@@ -251,6 +276,9 @@ placeholder):
 
 ### 7. Track how posts do
 
+Capture within a day of publishing as well as later: the day-one figure is
+what shows whether a hit came from the feed at once or from a later wave.
+
 Xueqiu shows only each post's running totals, so growth exists only if they
 are captured repeatedly: capture on every sync, and again a few days after a
 post goes out. Open https://mp.xueqiu.com/list/article/ (长文管理) and read
@@ -275,6 +303,18 @@ Check the row count against 已发布N, convert the rows to a JSON list of
 scratchpad, then `python scripts/xueqiu_stats.py record FILE.json`. A second
 capture on the same day replaces the first. The log lives in
 `reports/xueqiu/post_stats.jsonl` (gitignored).
+
+On 2026-11-28 the three-page loop returned 30 of 已发布41 (the oldest
+2024 posts were missing). The settled old posts barely change, so a short
+capture is acceptable; say so rather than claiming a full one.
+
+To look at post metadata (stock tags, edit time, type), call
+`/v4/statuses/user_timeline.json?page=1&user_id=7394617568` from a tab on
+`https://www.xueqiu.com/u/7394617568` (the bare domain redirects mid-call).
+Return only chosen fields: dumping whole status objects is blocked by the
+browser tool's cookie/URL filter. Stock tags appear in `tagsForWeb` as
+`";PDD,TQQQ,QQQ"`. As of 11-28 no metadata field (mark, score, type,
+controversial) separated hits from the rest.
 
 ## Notes
 
